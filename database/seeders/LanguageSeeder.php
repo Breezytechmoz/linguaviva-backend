@@ -4,15 +4,11 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Seeder;
 use App\Models\Language;
-use Illuminate\Support\Facades\DB;
 
 class LanguageSeeder extends Seeder
 {
     public function run(): void
     {
-        // Limpa a tabela antes de inserir, para não duplicar se corrermos várias vezes
-        DB::table('languages')->truncate();
-
         $languages = [
             // Línguas Moçambicanas
             ['name' => 'Emakhuwa', 'alternative_name' => 'Makhuwa', 'region' => 'Norte de Moçambique'],
@@ -32,7 +28,10 @@ class LanguageSeeder extends Seeder
         ];
 
         foreach ($languages as $lang) {
-            Language::create($lang);
+            Language::updateOrCreate(
+                ['name' => $lang['name']],
+                $lang
+            );
         }
     }
 }
