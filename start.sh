@@ -1,12 +1,7 @@
 #!/bin/bash
-
-# Executar as migrações da base de dados
 php artisan migrate --force
-
-# Limpar e otimizar a cache
+php artisan db:seed --class=LanguageSeeder --force
 php artisan config:cache
 php artisan route:cache
 php artisan view:cache
-
-# Iniciar o Apache
 apache2-foreground
