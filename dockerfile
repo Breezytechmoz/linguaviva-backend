@@ -1,6 +1,6 @@
 FROM php:8.2-apache
 
-# Instalar dependências do sistema e extensões PHP necessárias
+# Instalar dependências e extensões PHP
 RUN apt-get update && apt-get install -y \
     git \
     unzip \
@@ -20,11 +20,16 @@ WORKDIR /var/www/html
 # Copiar o código do projeto
 COPY . .
 
-# Instalar as dependências do Laravel (sem as de desenvolvimento)
+# CORREÇÃO: Apontar o Apache para a pasta public do Laravel
+ENV APACHE_DOCUMENT_ROOT /var/www/html/public
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/sites-available/*.conf
+RUN sed -ri -e 's!/var/www/html!${APACHE_DOCUMENT_ROOT}!g' /etc/apache2/apache2.conf /etc/apache2/conf-available/*.conf
+
+# Instalar as dependências do Laravel
 RUN composer install --no-dev --optimize-autoloader
 
-# Ajustar permissões das pastas de storage e cache
-RUN chown -R www-data:www-data storage bootstrap/cache
+# Ajustar permissões
+RUN chown -R www-data:www-data /var/www/html/storage /var/www/html/bootstrap/cache
 
 # Ativar o mod_rewrite do Apache
 RUN a2enmod rewrite
@@ -33,7 +38,7 @@ RUN a2enmod rewrite
 COPY start.sh /usr/local/bin/start.sh
 RUN chmod +x /usr/local/bin/start.sh
 
-# Expor a porta 80 (o Apache usa a 80 por defeito)
+# Expor a porta 80
 EXPOSE 80
 
 # Comando de arranque
