@@ -541,3 +541,16 @@ Route::middleware('auth:sanctum')->delete('/rooms/{id}', function (Request $requ
     $room->save();
     return response()->json(['status' => 'sucesso']);
 });
+
+Route::get('/run-seeder', function () {
+    try {
+        // Corre o seeder forçadamente
+        \Illuminate\Support\Facades\Artisan::call('db:seed', [
+            '--class' => 'LanguageSeeder',
+            '--force' => true,
+        ]);
+        return response()->json(['status' => 'sucesso', 'mensagem' => 'Línguas inseridas com sucesso!']);
+    } catch (\Exception $e) {
+        return response()->json(['status' => 'erro', 'mensagem' => $e->getMessage()]);
+    }
+});
