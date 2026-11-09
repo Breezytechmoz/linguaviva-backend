@@ -13,7 +13,8 @@ class Message extends Model
         'sender_id',
         'receiver_id',
         'content',
-        'is_read'
+        'is_read',
+        'image_url'
     ];
 
     // Relação com quem enviou

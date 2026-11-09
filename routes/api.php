@@ -157,15 +157,24 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     
     $request->validate([
         'receiver_id' => 'required|exists:users,id',
-        'content' => 'required|string|max:1000',
+        'content' => 'nullable|string|max:1000', // Agora é opcional
+        'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // NOVO: Aceita imagens até 5MB
     ]);
 
     $sender = $request->user();
+    $imageUrl = null;
+
+    // Se o utilizador enviou uma imagem, guarda-a
+    if ($request->hasFile('image')) {
+        $path = $request->file('image')->store('messages', 'public');
+        $imageUrl = asset('storage/' . $path);
+    }
 
     $message = \App\Models\Message::create([
         'sender_id' => $sender->id,
         'receiver_id' => $request->receiver_id,
-        'content' => $request->content,
+        'content' => $request->content ?? '', 
+        'image_url' => $imageUrl, // NOVO
     ]);
 
     $receiver = \App\Models\User::find($request->receiver_id);
