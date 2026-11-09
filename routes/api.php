@@ -167,7 +167,7 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     // Se o utilizador enviou uma imagem, guarda-a
     if ($request->hasFile('image')) {
         $path = $request->file('image')->store('messages', 'public');
-        $imageUrl = asset('storage/' . $path);
+        $imageUrl = url('storage/' . $path); 
     }
 
     $message = \App\Models\Message::create([
