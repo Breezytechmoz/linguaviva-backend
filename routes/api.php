@@ -324,6 +324,12 @@ Route::middleware('auth:sanctum')->get('/user/profile', function (Request $reque
 Route::middleware('auth:sanctum')->get('/users/{id}/profile', function (Request $request, $id) {
     $user = \App\Models\User::with('languages')->find($id);
     if (!$user) return response()->json(['error' => 'Utilizador não encontrado'], 404);
+    
+    // Verifica se eu bloqueei este utilizador
+    $isBlocked = \App\Models\Block::where('user_id', $request->user()->id)
+                ->where('blocked_user_id', $id)
+                ->exists();
+
     return response()->json([
         'id' => $user->id,
         'name' => $user->name,
@@ -335,6 +341,7 @@ Route::middleware('auth:sanctum')->get('/users/{id}/profile', function (Request 
         'last_seen_at' => $user->last_seen_at,
         'is_premium' => $user->isPremiumActive(),
         'languages' => $user->languages,
+        'is_blocked' => $isBlocked, // <-- ADICIONADO AQUI
     ]);
 });
 
@@ -540,4 +547,12 @@ Route::middleware('auth:sanctum')->delete('/rooms/{id}', function (Request $requ
     $room->is_active = false;
     $room->save();
     return response()->json(['status' => 'sucesso']);
+});
+
+
+// Rota para listar os utilizadores que eu bloquei
+Route::middleware('auth:sanctum')->get('/blocked-users', function (Request $request) {
+    $blockedIds = \App\Models\Block::where('user_id', $request->user()->id)->pluck('blocked_user_id');
+    $users = \App\Models\User::whereIn('id', $blockedIds)->get(['id', 'name', 'profile_photo']);
+    return response()->json($users);
 });
