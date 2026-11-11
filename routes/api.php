@@ -12,6 +12,7 @@ use Kreait\Firebase\Messaging\Notification;
 use Illuminate\Support\Facades\Password;
 use ZEGO\ZegoServerAssistant;
 use ZEGO\ZegoErrorCodes;
+use Cloudinary\Api\Upload\UploadApi;
 
 Route::get('/test-notification/{userId}', function ($userId) {
     $user = \App\Models\User::find($userId);
@@ -166,26 +167,28 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     $imageUrl = null;
     $audioUrl = null;
 
-    // Upload da Imagem para o Cloudinary
+    // Upload da Imagem para o Cloudinary (Sintaxe v3)
     if ($request->hasFile('image')) {
         try {
-            $uploadedFileUrl = \Cloudinary\Uploader::upload($request->file('image')->getRealPath(), [
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('image')->getRealPath(), [
                 'folder' => 'linguaviva/messages/images'
-            ])['secure_url'];
-            $imageUrl = $uploadedFileUrl;
+            ]);
+            $imageUrl = $result['secure_url'];
         } catch (\Exception $e) {
             return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
         }
     }
 
-    // Upload do Áudio para o Cloudinary (usamos resource_type video para áudio)
+    // Upload do Áudio para o Cloudinary (Sintaxe v3)
     if ($request->hasFile('audio')) {
         try {
-            $uploadedFileUrl = \Cloudinary\Uploader::upload($request->file('audio')->getRealPath(), [
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('audio')->getRealPath(), [
                 'resource_type' => 'video', // O Cloudinary trata áudio como "video"
                 'folder' => 'linguaviva/messages/audios'
-            ])['secure_url'];
-            $audioUrl = $uploadedFileUrl;
+            ]);
+            $audioUrl = $result['secure_url'];
         } catch (\Exception $e) {
             return response()->json(['error' => 'Erro ao carregar áudio: ' . $e->getMessage()], 500);
         }
