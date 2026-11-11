@@ -129,4 +129,16 @@ class User extends Authenticatable
             }
         });
     }
+
+        // Pessoas que este utilizador segue
+    public function following()
+    {
+        return $this->belongsToMany(User::class, 'followers', 'follower_id', 'user_id');
+    }
+
+    // Pessoas que seguem este utilizador (seguidores)
+    public function followers()
+    {
+        return $this->belongsToMany(User::class, 'followers', 'user_id', 'follower_id');
+    }
 }

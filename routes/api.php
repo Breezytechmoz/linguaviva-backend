@@ -391,20 +391,50 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
                     ->where('blocked_user_id', $id)
                     ->exists();
 
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'bio' => $user->bio,
-            'location' => $user->location,
-            'age' => $user->age,
-            'profile_photo' => $user->profile_photo,
-            'extra_photos' => $user->extra_photos,
-            'last_seen_at' => $user->last_seen_at,
-            'is_premium' => $user->isPremiumActive(),
-            'languages' => $user->languages,
-            'is_blocked' => $isBlocked, // <-- ADICIONADO AQUI
-        ]);
+    // Verifica se eu sigo este utilizador
+    $isFollowing = DB::table('followers')->where('user_id', $id)->where('follower_id', $request->user()->id)->exists();
+    
+    // Contadores
+    $followersCount = DB::table('followers')->where('user_id', $id)->count();
+    $followingCount = DB::table('followers')->where('follower_id', $id)->count();
+
+    return response()->json([
+        'id' => $user->id,
+        'name' => $user->name,
+        'bio' => $user->bio,
+        'location' => $user->location,
+        'age' => $user->age,
+        'profile_photo' => $user->profile_photo,
+        'extra_photos' => $user->extra_photos,
+        'last_seen_at' => $user->last_seen_at,
+        'is_premium' => $user->isPremiumActive(),
+        'languages' => $user->languages,
+        'is_blocked' => $isBlocked,
+        'is_following' => $isFollowing,
+        'followers_count' => $followersCount, 
+        'following_count' => $followingCount, 
+    ]);
     });
+
+    Route::middleware('auth:sanctum')->post('/users/{id}/follow', function (Request $request, $id) {
+    $myId = $request->user()->id;
+    if ($myId == $id) return response()->json(['error' => 'Não podes seguir-te a ti mesmo.'], 400);
+
+    $follow = DB::table('followers')->where('user_id', $id)->where('follower_id', $myId)->first();
+    
+    if ($follow) {
+        DB::table('followers')->where('user_id', $id)->where('follower_id', $myId)->delete();
+        return response()->json(['status' => 'unfollowed', 'mensagem' => 'Deixaste de seguir.']);
+    } else {
+        DB::table('followers')->insert([
+            'user_id' => $id, 
+            'follower_id' => $myId, 
+            'created_at' => now(), 
+            'updated_at' => now()
+        ]);
+        return response()->json(['status' => 'followed', 'mensagem' => 'Começaste a seguir.']);
+    }
+});
 
     Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
         $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
