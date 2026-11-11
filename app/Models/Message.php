@@ -14,7 +14,8 @@ class Message extends Model
         'receiver_id',
         'content',
         'is_read',
-        'image_url'
+        'image_url',
+        'audio_url'
     ];
 
     // Relação com quem enviou

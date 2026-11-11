@@ -158,11 +158,13 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     $request->validate([
         'receiver_id' => 'required|exists:users,id',
         'content' => 'nullable|string|max:1000', // Agora é opcional
-        'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // NOVO: Aceita imagens até 5MB
+        'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // Aceita imagens até 5MB
+        'audio' => 'nullable|file|mimes:mp3,wav,m4a,aac,webm|max:10240', // Áudio até 10MB
     ]);
 
     $sender = $request->user();
     $imageUrl = null;
+    $audioUrl = null;
 
     // Se o utilizador enviou uma imagem, guarda-a
     if ($request->hasFile('image')) {
@@ -170,11 +172,17 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
         $imageUrl = url('storage/' . $path); 
     }
 
+    if ($request->hasFile('audio')) {
+        $path = $request->file('audio')->store('messages/audios', 'public');
+        $audioUrl = url('storage/' . $path); 
+    }
+
     $message = \App\Models\Message::create([
         'sender_id' => $sender->id,
         'receiver_id' => $request->receiver_id,
         'content' => $request->content ?? '', 
-        'image_url' => $imageUrl, // NOVO
+        'image_url' => $imageUrl,
+        'audio_url' => $audioUrl,
     ]);
 
     $receiver = \App\Models\User::find($request->receiver_id);
