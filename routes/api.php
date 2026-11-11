@@ -436,41 +436,64 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
     }
 });
 
-    Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
-        $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
-        $path = $request->file('photo')->store('profiles', 'public');
-        $url = asset('storage/' . $path);
-        $user = $request->user();
-        $user->profile_photo = $url;
-        $completion = 20;
-        if ($user->age) $completion += 10;
-        if ($user->location) $completion += 10;
-        if ($user->bio) $completion += 10;
-        if ($user->profile_photo) $completion += 20;
-        if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
-        $user->profile_completion = min($completion, 100);
-        $user->save();
-        return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => $user->profile_completion]);
-    });
+Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
+    $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
+    $user = $request->user();
 
-    Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
-        $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
-        $user = $request->user();
-        $fotosExtras = $user->extra_photos ?? [];
-        $path = $request->file('photo')->store('profiles', 'public');
-        $url = asset('storage/' . $path);
-        $fotosExtras[] = $url;
-        $user->extra_photos = $fotosExtras;
-        $completion = 20;
-        if ($user->age) $completion += 10;
-        if ($user->location) $completion += 10;
-        if ($user->bio) $completion += 10;
-        if ($user->profile_photo) $completion += 20;
-        if (count($fotosExtras) >= 3) $completion += 30;
-        $user->profile_completion = min($completion, 100);
-        $user->save();
-        return response()->json(['status' => 'sucesso', 'extra_photos' => $user->extra_photos, 'completion' => $user->profile_completion]);
-    });
+    try {
+        $uploadApi = new UploadApi();
+        $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+            'folder' => 'linguaviva/profiles'
+        ]);
+        $url = $result['secure_url'];
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+    }
+
+    $user->profile_photo = $url;
+    $completion = 20;
+    if ($user->age) $completion += 10;
+    if ($user->location) $completion += 10;
+    if ($user->bio) $completion += 10;
+    if ($user->profile_photo) $completion += 20;
+    if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
+    
+    $user->profile_completion = min($completion, 100);
+    $user->save();
+    
+    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => $user->profile_completion]);
+});
+
+Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
+    $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
+    $user = $request->user();
+    $fotosExtras = $user->extra_photos ?? [];
+
+    try {
+        $uploadApi = new UploadApi();
+        $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+            'folder' => 'linguaviva/profiles/extras'
+        ]);
+        $url = $result['secure_url'];
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+    }
+
+    $fotosExtras[] = $url;
+    $user->extra_photos = $fotosExtras;
+    
+    $completion = 20;
+    if ($user->age) $completion += 10;
+    if ($user->location) $completion += 10;
+    if ($user->bio) $completion += 10;
+    if ($user->profile_photo) $completion += 20;
+    if (count($fotosExtras) >= 3) $completion += 30;
+    
+    $user->profile_completion = min($completion, 100);
+    $user->save();
+    
+    return response()->json(['status' => 'sucesso', 'extra_photos' => $user->extra_photos, 'completion' => $user->profile_completion]);
+});
 
     Route::middleware('auth:sanctum')->post('/users/{id}/block', function (Request $request, $id) {
         $myId = $request->user()->id;
