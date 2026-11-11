@@ -159,7 +159,7 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
         'receiver_id' => 'required|exists:users,id',
         'content' => 'nullable|string|max:1000', // Agora é opcional
         'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // Aceita imagens até 5MB
-        'audio' => 'nullable|file|mimes:mp3,wav,m4a,aac,webm|max:10240', // Áudio até 10MB
+        'audio' => 'nullable|file|mimetypes:audio/mpeg,audio/wav,audio/x-wav,audio/mp4,audio/x-m4a,audio/aac,audio/webm,application/octet-stream|max:10240',
     ]);
 
     $sender = $request->user();
