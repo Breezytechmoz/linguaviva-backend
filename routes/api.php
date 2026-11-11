@@ -456,64 +456,90 @@ Route::middleware('auth:sanctum')->post('/user/profile/update', function (Reques
     return response()->json(['status' => 'sucesso', 'completion' => (int) $user->profile_completion]);
 });
 
-Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
-    $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
-    $user = $request->user();
+    Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
+        $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
+        $user = $request->user();
 
-    try {
-        $uploadApi = new UploadApi();
-        $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
-            'folder' => 'linguaviva/profiles'
-        ]);
-        $url = $result['secure_url'];
-    } catch (\Exception $e) {
-        return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
-    }
+        try {
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+                'folder' => 'linguaviva/profiles'
+            ]);
+            $url = $result['secure_url'];
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+        }
 
-    $user->profile_photo = $url;
-    $completion = 20;
-    if ($user->age) $completion += 10;
-    if ($user->location) $completion += 10;
-    if ($user->bio) $completion += 10;
-    if ($user->profile_photo) $completion += 20;
-    if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
-    
-    $user->profile_completion = min($completion, 100);
-    $user->save();
-    
-    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
-});
+        $user->profile_photo = $url;
+        $completion = 20;
+        if ($user->age) $completion += 10;
+        if ($user->location) $completion += 10;
+        if ($user->bio) $completion += 10;
+        if ($user->profile_photo) $completion += 20;
+        if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
+        
+        $user->profile_completion = min($completion, 100);
+        $user->save();
+        
+        return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
+    });
 
-Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
-    $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
-    $user = $request->user();
-    $fotosExtras = $user->extra_photos ?? [];
+    Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
+        $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
+        $user = $request->user();
+        $fotosExtras = $user->extra_photos ?? [];
 
-    try {
-        $uploadApi = new UploadApi();
-        $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
-            'folder' => 'linguaviva/profiles/extras'
-        ]);
-        $url = $result['secure_url'];
-    } catch (\Exception $e) {
-        return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
-    }
+        try {
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+                'folder' => 'linguaviva/profiles/extras'
+            ]);
+            $url = $result['secure_url'];
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+        }
 
-    $fotosExtras[] = $url;
-    $user->extra_photos = $fotosExtras;
-    
-    $completion = 20;
-    if ($user->age) $completion += 10;
-    if ($user->location) $completion += 10;
-    if ($user->bio) $completion += 10;
-    if ($user->profile_photo) $completion += 20;
-    if (count($fotosExtras) >= 3) $completion += 30;
-    
-    $user->profile_completion = min($completion, 100);
-    $user->save();
-    
-    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
-});
+        $fotosExtras[] = $url;
+        $user->extra_photos = $fotosExtras;
+        
+        $completion = 20;
+        if ($user->age) $completion += 10;
+        if ($user->location) $completion += 10;
+        if ($user->bio) $completion += 10;
+        if ($user->profile_photo) $completion += 20;
+        if (count($fotosExtras) >= 3) $completion += 30;
+        
+        $user->profile_completion = min($completion, 100);
+        $user->save();
+        
+        return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
+    });
+
+    Route::middleware('auth:sanctum')->post('/user/profile/extra-photo/delete', function (Request $request) {
+        $request->validate(['url' => 'required|string']);
+        $user = $request->user();
+        $fotosExtras = $user->extra_photos ?? [];
+
+        // Remove a foto que corresponde ao URL enviado
+        $fotosExtras = array_values(array_filter($fotosExtras, function($foto) use ($request) {
+            return $foto !== $request->url;
+        }));
+
+        $user->extra_photos = $fotosExtras;
+        
+        // Recalcular a percentagem do perfil
+        $completion = 20;
+        if ($user->age) $completion += 10;
+        if ($user->location) $completion += 10;
+        if ($user->bio) $completion += 10;
+        if ($user->profile_photo) $completion += 20;
+        if (count($fotosExtras) >= 3) $completion += 30;
+        
+        $user->profile_completion = min($completion, 100);
+        $user->save();
+        
+        return response()->json(['status' => 'sucesso', 'extra_photos' => $user->extra_photos, 'completion' => (int) $user->profile_completion]);
+    });
 
     Route::middleware('auth:sanctum')->post('/users/{id}/block', function (Request $request, $id) {
         $myId = $request->user()->id;
