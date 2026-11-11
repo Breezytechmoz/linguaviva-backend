@@ -157,8 +157,8 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     
     $request->validate([
         'receiver_id' => 'required|exists:users,id',
-        'content' => 'nullable|string|max:1000', // Agora é opcional
-        'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120', // Aceita imagens até 5MB
+        'content' => 'nullable|string|max:1000',
+        'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
         'audio' => 'nullable|file|max:10240',
     ]);
 
@@ -166,15 +166,29 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     $imageUrl = null;
     $audioUrl = null;
 
-    // Se o utilizador enviou uma imagem, guarda-a
+    // Upload da Imagem para o Cloudinary
     if ($request->hasFile('image')) {
-        $path = $request->file('image')->store('messages', 'public');
-        $imageUrl = url('storage/' . $path); 
+        try {
+            $uploadedFileUrl = \Cloudinary\Uploader::upload($request->file('image')->getRealPath(), [
+                'folder' => 'linguaviva/messages/images'
+            ])['secure_url'];
+            $imageUrl = $uploadedFileUrl;
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+        }
     }
 
+    // Upload do Áudio para o Cloudinary (usamos resource_type video para áudio)
     if ($request->hasFile('audio')) {
-        $path = $request->file('audio')->store('messages/audios', 'public');
-        $audioUrl = url('storage/' . $path); 
+        try {
+            $uploadedFileUrl = \Cloudinary\Uploader::upload($request->file('audio')->getRealPath(), [
+                'resource_type' => 'video', // O Cloudinary trata áudio como "video"
+                'folder' => 'linguaviva/messages/audios'
+            ])['secure_url'];
+            $audioUrl = $uploadedFileUrl;
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erro ao carregar áudio: ' . $e->getMessage()], 500);
+        }
     }
 
     $message = \App\Models\Message::create([
