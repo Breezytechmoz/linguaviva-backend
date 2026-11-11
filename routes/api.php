@@ -436,6 +436,26 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
     }
 });
 
+Route::middleware('auth:sanctum')->post('/user/profile/update', function (Request $request) {
+    $user = $request->user();
+    
+    if ($request->has('date_of_birth')) $user->date_of_birth = $request->date_of_birth;
+    if ($request->has('location')) $user->location = $request->location;
+    if ($request->has('bio')) $user->bio = $request->bio;
+
+    $completion = 20;
+    if ($user->date_of_birth) $completion += 10;
+    if ($user->location) $completion += 10;
+    if ($user->bio) $completion += 10;
+    if ($user->profile_photo) $completion += 20;
+    if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
+    
+    $user->profile_completion = min($completion, 100);
+    $user->save();
+    
+    return response()->json(['status' => 'sucesso', 'completion' => (int) $user->profile_completion]);
+});
+
 Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
     $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
     $user = $request->user();
@@ -461,7 +481,7 @@ Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request
     $user->profile_completion = min($completion, 100);
     $user->save();
     
-    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => $user->profile_completion]);
+    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
 });
 
 Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
@@ -492,7 +512,7 @@ Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (R
     $user->profile_completion = min($completion, 100);
     $user->save();
     
-    return response()->json(['status' => 'sucesso', 'extra_photos' => $user->extra_photos, 'completion' => $user->profile_completion]);
+    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
 });
 
     Route::middleware('auth:sanctum')->post('/users/{id}/block', function (Request $request, $id) {
