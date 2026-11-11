@@ -238,19 +238,29 @@
         return response()->json(['status' => 'sucesso', 'mensagem' => 'Mensagem apagada.']);
     });
 
-    Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $request, $userId) {
-        $myId = $request->user()->id;
+Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $request, $userId) {
+    $myId = $request->user()->id;
+    
+    // Paginação: Carrega 30 mensagens por vez
+    $limit = $request->input('limit', 30);
+    $offset = $request->input('offset', 0);
 
-        $mensagens = \App\Models\Message::where(function ($query) use ($myId, $userId) {
-            $query->where('sender_id', $myId)->where('receiver_id', $userId);
-        })->orWhere(function ($query) use ($myId, $userId) {
-            $query->where('sender_id', $userId)->where('receiver_id', $myId);
-        })->orderBy('created_at', 'asc')->get();
+    $mensagens = \App\Models\Message::where(function ($query) use ($myId, $userId) {
+        $query->where('sender_id', $myId)->where('receiver_id', $userId);
+    })->orWhere(function ($query) use ($myId, $userId) {
+        $query->where('sender_id', $userId)->where('receiver_id', $myId);
+    })
+    ->orderBy('created_at', 'desc') // Pega as mais recentes
+    ->skip($offset)
+    ->take($limit)
+    ->get()
+    ->reverse() // Inverte para ficarem em ordem cronológica na tela
+    ->values(); // Reorganiza os índices do array
 
-        \App\Models\Message::where('sender_id', $userId)->where('receiver_id', $myId)->where('is_read', false)->update(['is_read' => true]);
+    \App\Models\Message::where('sender_id', $userId)->where('receiver_id', $myId)->where('is_read', false)->update(['is_read' => true]);
 
-        return response()->json($mensagens);
-    });
+    return response()->json($mensagens);
+});
 
     Route::middleware('auth:sanctum')->get('/conversations', function (Request $request) {
         $myId = $request->user()->id;
