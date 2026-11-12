@@ -428,6 +428,7 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
     } else {
          DB::table('app_notifications')->insert([
         'user_id' => $id,
+        'related_user_id' => $myId,
         'title' => 'Novo Seguidor',
         'message' => $request->user()->name . ' começou a seguir-te.',
         'type' => 'follow',
@@ -506,6 +507,7 @@ Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $
 
         DB::table('app_notifications')->insert([
             'user_id' => $id,
+            'related_user_id' => $myId,
             'title' => 'Nova Visita ao Perfil',
             'message' => $request->user()->name . ' visitou o teu perfil.',
             'type' => 'visit',
