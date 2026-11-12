@@ -1,247 +1,244 @@
-    <?php
+<?php
 
-    use Illuminate\Http\Request;
-    use Illuminate\Support\Facades\Route;
-    use App\Models\User;
-    use Illuminate\Support\Facades\Hash;
-    use App\Models\Language;
-    use Illuminate\Support\Facades\Auth;
-    use Illuminate\Support\Facades\DB;
-    use Kreait\Firebase\Messaging\CloudMessage;
-    use Kreait\Firebase\Messaging\Notification;
-    use Illuminate\Support\Facades\Password;
-    use ZEGO\ZegoServerAssistant;
-    use ZEGO\ZegoErrorCodes;
-    use Cloudinary\Api\Upload\UploadApi;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Route;
+use App\Models\User;
+use Illuminate\Support\Facades\Hash;
+use App\Models\Language;
+use Illuminate\Support\Facades\DB;
+use Kreait\Firebase\Messaging\CloudMessage;
+use Kreait\Firebase\Messaging\Notification;
+use Illuminate\Support\Facades\Password;
+use ZEGO\ZegoServerAssistant;
+use ZEGO\ZegoErrorCodes;
+use Cloudinary\Api\Upload\UploadApi;
 
-    Route::get('/test-notification/{userId}', function ($userId) {
-        $user = \App\Models\User::find($userId);
-        if (!$user || !$user->fcm_token) {
-            return response()->json(['error' => 'Utilizador sem token FCM'], 400);
+Route::get('/test-notification/{userId}', function ($userId) {
+    $user = \App\Models\User::find($userId);
+    if (!$user || !$user->fcm_token) {
+        return response()->json(['error' => 'Utilizador sem token FCM'], 400);
+    }
+
+    $messaging = app('firebase.messaging');
+    $message = CloudMessage::withTarget('token', $user->fcm_token)
+        ->withNotification(Notification::create('LínguaViva Moz', 'Olá! Esta é uma notificação de teste.'));
+
+    $messaging->send($message);
+    return response()->json(['status' => 'Notificação enviada!']);
+});
+
+Route::get('/teste', function () {
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'API a funcionar!']);
+});
+
+// Rota de Registo
+Route::post('/register', function (Request $request) {
+    $request->validate([
+        'name' => 'required|string|max:255',
+        'email' => 'required|string|email|max:255|unique:users',
+        'password' => 'required|string|min:6',
+    ]);
+
+    $user = User::create([
+        'name' => $request->name,
+        'email' => $request->email,
+        'password' => Hash::make($request->password),
+    ]);
+
+    $token = $user->createToken('auth_token')->plainTextToken;
+
+    return response()->json([
+        'status' => 'sucesso',
+        'mensagem' => 'Conta criada com sucesso!',
+        'user' => $user,
+        'token' => $token
+    ], 201);
+});
+
+// Rota de Login
+Route::post('/login', function (Request $request) {
+    $request->validate([
+        'email' => 'required|email',
+        'password' => 'required',
+    ]);
+
+    $user = User::where('email', $request->email)->first();
+
+    if (!$user || !Hash::check($request->password, $user->password)) {
+        return response()->json(['status' => 'erro', 'mensagem' => 'E-mail ou palavra-passe incorretos.'], 401);
+    }
+
+    if ($user->is_suspended) {
+        return response()->json(['status' => 'erro', 'mensagem' => 'A tua conta foi suspensa por violar as regras da comunidade.'], 403);
+    }
+
+    $token = $user->createToken('auth_token')->plainTextToken;
+
+    return response()->json([
+        'status' => 'sucesso',
+        'mensagem' => 'Login efetuado com sucesso!',
+        'user' => $user,
+        'token' => $token
+    ], 200);
+});
+
+Route::get('/languages', function () {
+    return response()->json(Language::where('is_active', true)->get());
+});
+
+Route::middleware('auth:sanctum')->post('/user/languages', function (Request $request) {
+    $request->validate([
+        'language_id' => 'required|exists:languages,id',
+        'type' => 'required|in:native,learning',
+        'level' => 'required|in:beginner,intermediate,advanced,fluent,native'
+    ]);
+
+    $user = $request->user();
+
+    $user->languages()->syncWithoutDetaching([
+        $request->language_id => [
+            'type' => $request->type,
+            'level' => $request->level
+        ]
+    ]);
+
+    return response()->json([
+        'status' => 'sucesso',
+        'mensagem' => 'Língua adicionada ao teu perfil!'
+    ], 200);
+});
+
+Route::middleware('auth:sanctum')->get('/user/languages', function (Request $request) {
+    return response()->json($request->user()->languages);
+});
+
+Route::middleware('auth:sanctum')->get('/community', function (Request $request) {
+    $currentUserId = $request->user()->id;
+    $user = $request->user();
+    
+    if ($request->filled('location') && !$user->isPremiumActive()) {
+        return response()->json(['error' => 'premium_required', 'mensagem' => 'A pesquisa por localização é uma funcionalidade Premium.'], 403);
+    }
+
+    $bloqueados = \App\Models\Block::where('user_id', $currentUserId)->pluck('blocked_user_id')->toArray();
+
+    $query = \App\Models\User::where('id', '!=', $currentUserId)
+                ->whereNotIn('id', $bloqueados)
+                ->with('languages');
+
+    if ($request->filled('search')) {
+        $query->where('name', 'LIKE', '%' . $request->search . '%');
+    }
+    if ($request->filled('location')) {
+        $query->where('location', 'LIKE', '%' . $request->location . '%');
+    }
+    if ($request->filled('native_language')) {
+        $query->whereHas('languages', function($q) use ($request) {
+            $q->where('languages.id', $request->native_language)->where('type', 'native');
+        });
+    }
+    if ($request->filled('learning_language')) {
+        $query->whereHas('languages', function($q) use ($request) {
+            $q->where('languages.id', $request->learning_language)->where('type', 'learning');
+        });
+    }
+
+    $query->orderBy('is_premium', 'desc')->orderBy('name');
+
+    return response()->json($query->get());
+});
+
+Route::middleware('auth:sanctum')->post('/messages', function (Request $request) {
+    $user = $request->user();
+
+    if ($user->profile_completion < 60 || empty($user->profile_photo)) {
+        return response()->json(['status' => 'erro', 'mensagem' => 'Para enviares mensagens, tens de ter uma foto de perfil e pelo menos 60% do teu perfil preenchido.'], 403);
+    }
+    
+    $request->validate([
+        'receiver_id' => 'required|exists:users,id',
+        'content' => 'nullable|string|max:1000',
+        'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
+        'audio' => 'nullable|file|max:10240',
+    ]);
+
+    $sender = $request->user();
+    $imageUrl = null;
+    $audioUrl = null;
+
+    // Upload da Imagem para o Cloudinary
+    if ($request->hasFile('image')) {
+        try {
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('image')->getRealPath(), [
+                'folder' => 'linguaviva/messages/images'
+            ]);
+            $imageUrl = $result['secure_url'];
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
         }
+    }
 
-        $messaging = app('firebase.messaging');
-        $message = CloudMessage::withTarget('token', $user->fcm_token)
-            ->withNotification(Notification::create('LínguaViva Moz', 'Olá! Esta é uma notificação de teste.'));
-
-        $messaging->send($message);
-        return response()->json(['status' => 'Notificação enviada!']);
-    });
-
-    Route::get('/teste', function () {
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'API a funcionar!']);
-    });
-
-    // Rota de Registo
-    Route::post('/register', function (Request $request) {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:6',
-        ]);
-
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-        ]);
-
-        $token = $user->createToken('auth_token')->plainTextToken;
-
-        return response()->json([
-            'status' => 'sucesso',
-            'mensagem' => 'Conta criada com sucesso!',
-            'user' => $user,
-            'token' => $token
-        ], 201);
-    });
-
-    // Rota de Login
-    Route::post('/login', function (Request $request) {
-        $request->validate([
-            'email' => 'required|email',
-            'password' => 'required',
-        ]);
-
-        $user = User::where('email', $request->email)->first();
-
-        if (!$user || !Hash::check($request->password, $user->password)) {
-            return response()->json(['status' => 'erro', 'mensagem' => 'E-mail ou palavra-passe incorretos.'], 401);
+    // Upload do Áudio para o Cloudinary
+    if ($request->hasFile('audio')) {
+        try {
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('audio')->getRealPath(), [
+                'resource_type' => 'video',
+                'folder' => 'linguaviva/messages/audios'
+            ]);
+            $audioUrl = $result['secure_url'];
+        } catch (\Exception $e) {
+            return response()->json(['error' => 'Erro ao carregar áudio: ' . $e->getMessage()], 500);
         }
+    }
 
-        if ($user->is_suspended) {
-            return response()->json(['status' => 'erro', 'mensagem' => 'A tua conta foi suspensa por violar as regras da comunidade.'], 403);
+    $message = \App\Models\Message::create([
+        'sender_id' => $sender->id,
+        'receiver_id' => $request->receiver_id,
+        'content' => $request->content ?? '', 
+        'image_url' => $imageUrl,
+        'audio_url' => $audioUrl,
+    ]);
+
+    $receiver = \App\Models\User::find($request->receiver_id);
+
+    if ($receiver && $receiver->fcm_token) {
+        try {
+            $messaging = app('firebase.messaging');
+            $notification = \Kreait\Firebase\Messaging\Notification::create($sender->name, $request->content);
+            $cloudMessage = \Kreait\Firebase\Messaging\CloudMessage::withTarget('token', $receiver->fcm_token)
+                ->withNotification($notification)
+                ->withData(['sender_id' => (string) $sender->id, 'type' => 'new_message']);
+
+            $messaging->send($cloudMessage);
+        } catch (\Exception $e) {
+            \Log::error('Erro ao enviar notificação Firebase: ' . $e->getMessage());
         }
+    }
 
-        $token = $user->createToken('auth_token')->plainTextToken;
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Mensagem enviada!', 'data' => $message], 201);
+});
 
-        return response()->json([
-            'status' => 'sucesso',
-            'mensagem' => 'Login efetuado com sucesso!',
-            'user' => $user,
-            'token' => $token
-        ], 200);
-    });
-
-    Route::get('/languages', function () {
-        return response()->json(Language::where('is_active', true)->get());
-    });
-
-    Route::middleware('auth:sanctum')->post('/user/languages', function (Request $request) {
-        $request->validate([
-            'language_id' => 'required|exists:languages,id',
-            'type' => 'required|in:native,learning',
-            'level' => 'required|in:beginner,intermediate,advanced,fluent,native'
-        ]);
-
-        $user = $request->user();
-
-        $user->languages()->syncWithoutDetaching([
-            $request->language_id => [
-                'type' => $request->type,
-                'level' => $request->level
-            ]
-        ]);
-
-        return response()->json([
-            'status' => 'sucesso',
-            'mensagem' => 'Língua adicionada ao teu perfil!'
-        ], 200);
-    });
-
-    Route::middleware('auth:sanctum')->get('/user/languages', function (Request $request) {
-        return response()->json($request->user()->languages);
-    });
-
-    Route::middleware('auth:sanctum')->get('/community', function (Request $request) {
-        $currentUserId = $request->user()->id;
-        $user = $request->user();
-        
-        if ($request->filled('location') && !$user->isPremiumActive()) {
-            return response()->json(['error' => 'premium_required', 'mensagem' => 'A pesquisa por localização é uma funcionalidade Premium.'], 403);
-        }
-
-        $bloqueados = \App\Models\Block::where('user_id', $currentUserId)->pluck('blocked_user_id')->toArray();
-
-        $query = \App\Models\User::where('id', '!=', $currentUserId)
-                    ->whereNotIn('id', $bloqueados)
-                    ->with('languages');
-
-        if ($request->filled('search')) {
-            $query->where('name', 'LIKE', '%' . $request->search . '%');
-        }
-        if ($request->filled('location')) {
-            $query->where('location', 'LIKE', '%' . $request->location . '%');
-        }
-        if ($request->filled('native_language')) {
-            $query->whereHas('languages', function($q) use ($request) {
-                $q->where('languages.id', $request->native_language)->where('type', 'native');
-            });
-        }
-        if ($request->filled('learning_language')) {
-            $query->whereHas('languages', function($q) use ($request) {
-                $q->where('languages.id', $request->learning_language)->where('type', 'learning');
-            });
-        }
-
-        $query->orderBy('is_premium', 'desc')->orderBy('name');
-
-        return response()->json($query->get());
-    });
-
-    Route::middleware('auth:sanctum')->post('/messages', function (Request $request) {
-        $user = $request->user();
-
-        if ($user->profile_completion < 60 || empty($user->profile_photo)) {
-            return response()->json(['status' => 'erro', 'mensagem' => 'Para enviares mensagens, tens de ter uma foto de perfil e pelo menos 60% do teu perfil preenchido.'], 403);
-        }
-        
-        $request->validate([
-            'receiver_id' => 'required|exists:users,id',
-            'content' => 'nullable|string|max:1000',
-            'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:5120',
-            'audio' => 'nullable|file|max:10240',
-        ]);
-
-        $sender = $request->user();
-        $imageUrl = null;
-        $audioUrl = null;
-
-        // Upload da Imagem para o Cloudinary (Sintaxe v3)
-        if ($request->hasFile('image')) {
-            try {
-                $uploadApi = new UploadApi();
-                $result = $uploadApi->upload($request->file('image')->getRealPath(), [
-                    'folder' => 'linguaviva/messages/images'
-                ]);
-                $imageUrl = $result['secure_url'];
-            } catch (\Exception $e) {
-                return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
-            }
-        }
-
-        // Upload do Áudio para o Cloudinary (Sintaxe v3)
-        if ($request->hasFile('audio')) {
-            try {
-                $uploadApi = new UploadApi();
-                $result = $uploadApi->upload($request->file('audio')->getRealPath(), [
-                    'resource_type' => 'video', // O Cloudinary trata áudio como "video"
-                    'folder' => 'linguaviva/messages/audios'
-                ]);
-                $audioUrl = $result['secure_url'];
-            } catch (\Exception $e) {
-                return response()->json(['error' => 'Erro ao carregar áudio: ' . $e->getMessage()], 500);
-            }
-        }
-
-        $message = \App\Models\Message::create([
-            'sender_id' => $sender->id,
-            'receiver_id' => $request->receiver_id,
-            'content' => $request->content ?? '', 
-            'image_url' => $imageUrl,
-            'audio_url' => $audioUrl,
-        ]);
-
-        $receiver = \App\Models\User::find($request->receiver_id);
-
-        if ($receiver && $receiver->fcm_token) {
-            try {
-                $messaging = app('firebase.messaging');
-                $notification = \Kreait\Firebase\Messaging\Notification::create($sender->name, $request->content);
-                $cloudMessage = \Kreait\Firebase\Messaging\CloudMessage::withTarget('token', $receiver->fcm_token)
-                    ->withNotification($notification)
-                    ->withData(['sender_id' => (string) $sender->id, 'type' => 'new_message']);
-
-                $messaging->send($cloudMessage);
-            } catch (\Exception $e) {
-                \Log::error('Erro ao enviar notificação Firebase: ' . $e->getMessage());
-            }
-        }
-
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Mensagem enviada!', 'data' => $message], 201);
-    });
-
-    Route::middleware('auth:sanctum')->delete('/messages/{id}', function (Request $request, $id) {
+Route::middleware('auth:sanctum')->delete('/messages/{id}', function (Request $request, $id) {
     $message = \App\Models\Message::find($id);
     
-        if (!$message) {
-            return response()->json(['error' => 'Mensagem não encontrada'], 404);
-        }
-        
-        // Só o remetente pode apagar a mensagem para todos
-        if ($message->sender_id !== $request->user()->id) {
-            return response()->json(['error' => 'Não tens permissão para apagar esta mensagem'], 403);
-        }
-        
-        $message->delete();
-        
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Mensagem apagada.']);
-    });
+    if (!$message) {
+        return response()->json(['error' => 'Mensagem não encontrada'], 404);
+    }
+    
+    if ($message->sender_id !== $request->user()->id) {
+        return response()->json(['error' => 'Não tens permissão para apagar esta mensagem'], 403);
+    }
+    
+    $message->delete();
+    
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Mensagem apagada.']);
+});
 
 Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $request, $userId) {
     $myId = $request->user()->id;
     
-    // Paginação: Carrega 30 mensagens por vez
     $limit = $request->input('limit', 30);
     $offset = $request->input('offset', 0);
 
@@ -250,179 +247,176 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
     })->orWhere(function ($query) use ($myId, $userId) {
         $query->where('sender_id', $userId)->where('receiver_id', $myId);
     })
-    ->orderBy('created_at', 'desc') // Pega as mais recentes
+    ->orderBy('created_at', 'desc')
     ->skip($offset)
     ->take($limit)
     ->get()
-    ->reverse() // Inverte para ficarem em ordem cronológica na tela
-    ->values(); // Reorganiza os índices do array
+    ->reverse()
+    ->values();
 
     \App\Models\Message::where('sender_id', $userId)->where('receiver_id', $myId)->where('is_read', false)->update(['is_read' => true]);
 
     return response()->json($mensagens);
 });
 
-    Route::middleware('auth:sanctum')->get('/conversations', function (Request $request) {
-        $myId = $request->user()->id;
-        $enviados = DB::table('messages')->where('sender_id', $myId)->pluck('receiver_id')->toArray();
-        $recebidos = DB::table('messages')->where('receiver_id', $myId)->pluck('sender_id')->toArray();
-        $utilizadoresIds = array_unique(array_merge($enviados, $recebidos));
-        $utilizadores = \App\Models\User::whereIn('id', $utilizadoresIds)->get();
-        return response()->json($utilizadores);
-    });
+Route::middleware('auth:sanctum')->get('/conversations', function (Request $request) {
+    $myId = $request->user()->id;
+    $enviados = DB::table('messages')->where('sender_id', $myId)->pluck('receiver_id')->toArray();
+    $recebidos = DB::table('messages')->where('receiver_id', $myId)->pluck('sender_id')->toArray();
+    $utilizadoresIds = array_unique(array_merge($enviados, $recebidos));
+    $utilizadores = \App\Models\User::whereIn('id', $utilizadoresIds)->get();
+    return response()->json($utilizadores);
+});
 
-    Route::middleware('auth:sanctum')->get('/messages/unread/count', function (Request $request) {
-        $count = \App\Models\Message::where('receiver_id', $request->user()->id)->where('is_read', false)->count();
-        return response()->json(['unread_count' => $count]);
-    });
+Route::middleware('auth:sanctum')->get('/messages/unread/count', function (Request $request) {
+    $count = \App\Models\Message::where('receiver_id', $request->user()->id)->where('is_read', false)->count();
+    return response()->json(['unread_count' => $count]);
+});
 
-    Route::middleware('auth:sanctum')->get('/users/{id}/status', function ($id) {
-        $user = \App\Models\User::find($id);
-        if (!$user) return response()->json(['error' => 'User not found'], 404);
-        $isOnline = $user->last_seen_at && \Carbon\Carbon::parse($user->last_seen_at)->diffInMinutes(now()) < 2;
-        return response()->json(['is_online' => $isOnline, 'is_typing' => $user->is_typing, 'last_seen_at' => $user->last_seen_at]);
-    });
+Route::middleware('auth:sanctum')->get('/users/{id}/status', function ($id) {
+    $user = \App\Models\User::find($id);
+    if (!$user) return response()->json(['error' => 'User not found'], 404);
+    $isOnline = $user->last_seen_at && \Carbon\Carbon::parse($user->last_seen_at)->diffInMinutes(now()) < 2;
+    return response()->json(['is_online' => $isOnline, 'is_typing' => $user->is_typing, 'last_seen_at' => $user->last_seen_at]);
+});
 
-    Route::middleware('auth:sanctum')->post('/user/activity', function (Request $request) {
-        $request->user()->update(['last_seen_at' => now(), 'is_typing' => $request->is_typing ?? false]);
-        return response()->json(['status' => 'ok']);
-    });
+Route::middleware('auth:sanctum')->post('/user/activity', function (Request $request) {
+    $request->user()->update(['last_seen_at' => now(), 'is_typing' => $request->is_typing ?? false]);
+    return response()->json(['status' => 'ok']);
+});
 
-    Route::middleware('auth:sanctum')->post('/translate', function (Request $request) {
-        $request->validate(['text' => 'required|string', 'source' => 'required|string|size:2', 'target' => 'required|string|size:2']);
+Route::middleware('auth:sanctum')->post('/translate', function (Request $request) {
+    $request->validate(['text' => 'required|string', 'source' => 'required|string|size:2', 'target' => 'required|string|size:2']);
 
-        $user = $request->user();
-        $hoje = now()->toDateString();
+    $user = $request->user();
+    $hoje = now()->toDateString();
 
-        if (!$user->isPremiumActive()) {
-            if ($user->last_translation_date && $user->last_translation_date->toDateString() === $hoje) {
-                if ($user->daily_translations_count >= 6) {
-                    return response()->json(['status' => 'premium_required', 'mensagem' => 'Atingiste o limite de 6 traduções gratuitas hoje. Adere ao Premium para traduções ilimitadas.'], 403);
-                }
-                $user->increment('daily_translations_count');
-            } else {
-                $user->daily_translations_count = 1;
-                $user->last_translation_date = $hoje;
-                $user->save();
+    if (!$user->isPremiumActive()) {
+        if ($user->last_translation_date && $user->last_translation_date->toDateString() === $hoje) {
+            if ($user->daily_translations_count >= 6) {
+                return response()->json(['status' => 'premium_required', 'mensagem' => 'Atingiste o limite de 6 traduções gratuitas hoje. Adere ao Premium para traduções ilimitadas.'], 403);
             }
+            $user->increment('daily_translations_count');
+        } else {
+            $user->daily_translations_count = 1;
+            $user->last_translation_date = $hoje;
+            $user->save();
         }
+    }
 
-        $response = \Illuminate\Support\Facades\Http::get("https://api.mymemory.translated.net/get", [
-            'q' => $request->text,
-            'langpair' => $request->source . '|' . $request->target
-        ]);
+    $response = \Illuminate\Support\Facades\Http::get("https://api.mymemory.translated.net/get", [
+        'q' => $request->text,
+        'langpair' => $request->source . '|' . $request->target
+    ]);
 
-        if ($response->successful()) {
-            return response()->json(['status' => 'sucesso', 'translatedText' => $response->json()['responseData']['translatedText']]);
-        }
+    if ($response->successful()) {
+        return response()->json(['status' => 'sucesso', 'translatedText' => $response->json()['responseData']['translatedText']]);
+    }
 
-        return response()->json(['status' => 'erro', 'message' => 'Erro na tradução'], 500);
-    });
+    return response()->json(['status' => 'erro', 'message' => 'Erro na tradução'], 500);
+});
 
-    Route::middleware(['auth:sanctum'])->post('/admin/users/{id}/toggle-suspend', function (Request $request, $id) {
-        if (!$request->user()->is_admin) return response()->json(['error' => 'Acesso negado'], 403);
-        $user = \App\Models\User::find($id);
-        if (!$user) return response()->json(['error' => 'Utilizador não encontrado'], 404);
-        if ($user->id === $request->user()->id) return response()->json(['error' => 'Não podes suspender-te a ti mesmo'], 400);
-        $user->is_suspended = !$user->is_suspended;
-        $user->save();
-        return response()->json(['status' => 'ok', 'is_suspended' => $user->is_suspended]);
-    });
+Route::middleware(['auth:sanctum'])->post('/admin/users/{id}/toggle-suspend', function (Request $request, $id) {
+    if (!$request->user()->is_admin) return response()->json(['error' => 'Acesso negado'], 403);
+    $user = \App\Models\User::find($id);
+    if (!$user) return response()->json(['error' => 'Utilizador não encontrado'], 404);
+    if ($user->id === $request->user()->id) return response()->json(['error' => 'Não podes suspender-te a ti mesmo'], 400);
+    $user->is_suspended = !$user->is_suspended;
+    $user->save();
+    return response()->json(['status' => 'ok', 'is_suspended' => $user->is_suspended]);
+});
 
-    Route::middleware('auth:sanctum')->post('/premium/request', function (Request $request) {
-        $request->validate(['method' => 'required|in:mpesa,emola', 'reference' => 'required|string|unique:payment_requests,transaction_reference']);
-        $existePendente = \App\Models\PaymentRequest::where('user_id', $request->user()->id)->where('status', 'pending')->exists();
-        if ($existePendente) return response()->json(['status' => 'erro', 'mensagem' => 'Já tens um pedido pendente. Aguarda a aprovação.'], 400);
+Route::middleware('auth:sanctum')->post('/premium/request', function (Request $request) {
+    $request->validate(['method' => 'required|in:mpesa,emola', 'reference' => 'required|string|unique:payment_requests,transaction_reference']);
+    $existePendente = \App\Models\PaymentRequest::where('user_id', $request->user()->id)->where('status', 'pending')->exists();
+    if ($existePendente) return response()->json(['status' => 'erro', 'mensagem' => 'Já tens um pedido pendente. Aguarda a aprovação.'], 400);
 
-        \App\Models\PaymentRequest::create(['user_id' => $request->user()->id, 'amount' => 199.00, 'method' => $request->method, 'transaction_reference' => $request->reference]);
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Pedido enviado! Aguarda a confirmação do administrador.']);
-    });
+    \App\Models\PaymentRequest::create(['user_id' => $request->user()->id, 'amount' => 199.00, 'method' => $request->method, 'transaction_reference' => $request->reference]);
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Pedido enviado! Aguarda a confirmação do administrador.']);
+});
 
-    Route::middleware('auth:sanctum')->get('/premium/status', function (Request $request) {
-        return response()->json(['is_premium' => $request->user()->isPremiumActive(), 'expires_at' => $request->user()->premium_expires_at]);
-    });
+Route::middleware('auth:sanctum')->get('/premium/status', function (Request $request) {
+    return response()->json(['is_premium' => $request->user()->isPremiumActive(), 'expires_at' => $request->user()->premium_expires_at]);
+});
 
-    Route::middleware('auth:sanctum')->post('/user/fcm-token', function (Request $request) {
-        $request->validate(['token' => 'required|string']);
-        $request->user()->update(['fcm_token' => $request->token]);
-        return response()->json(['status' => 'ok']);
-    });
+Route::middleware('auth:sanctum')->post('/user/fcm-token', function (Request $request) {
+    $request->validate(['token' => 'required|string']);
+    $request->user()->update(['fcm_token' => $request->token]);
+    return response()->json(['status' => 'ok']);
+});
 
-    // =========================================================================
-    // ROTA CORRIGIDA DO PERFIL (Lê a carteira, palavras e línguas do tradutor)
-    // =========================================================================
-    Route::middleware('auth:sanctum')->get('/user/profile', function (Request $request) {
-        $user = $request->user();
+// =========================================================================
+// ROTA DO PERFIL DO UTILIZADOR LOGADO
+// =========================================================================
+Route::middleware('auth:sanctum')->get('/user/profile', function (Request $request) {
+    $user = $request->user();
+    
+    $walletBalance = 0;
+    $wordsSubmitted = 0;
+    $translatorLanguagesNames = [];
+
+    if ($user->is_translator) {
+        $wallet = \App\Models\TranslatorWallet::where('user_id', $user->id)->first();
+        $walletBalance = $wallet ? (float) $wallet->balance : 0.0;
         
-        $walletBalance = 0;
-        $wordsSubmitted = 0;
-        $translatorLanguagesNames = [];
-
-        if ($user->is_translator) {
-            $wallet = \App\Models\TranslatorWallet::where('user_id', $user->id)->first();
-            $walletBalance = $wallet ? (float) $wallet->balance : 0.0;
-            
-            $wordsSubmitted = \App\Models\Translation::where('translator_id', $user->id)->count();
-            
-            $langs = $user->translator_languages;
-            if ($langs && !is_array($langs)) {
-                $langs = [$langs];
-            }
-            if ($langs && is_array($langs) && count($langs) > 0) {
-                $translatorLanguagesNames = \App\Models\Language::whereIn('id', $langs)->pluck('name')->toArray();
-            }
+        $wordsSubmitted = \App\Models\Translation::where('translator_id', $user->id)->count();
+        
+        $langs = $user->translator_languages;
+        if ($langs && !is_array($langs)) {
+            $langs = [$langs];
         }
+        if ($langs && is_array($langs) && count($langs) > 0) {
+            $translatorLanguagesNames = \App\Models\Language::whereIn('id', $langs)->pluck('name')->toArray();
+        }
+    }
 
-        $userData = $user->toArray();
-        $userData['wallet_balance'] = $walletBalance;
-        $userData['words_submitted'] = $wordsSubmitted;
-        $userData['translator_languages_names'] = $translatorLanguagesNames;
+    $userData = $user->toArray();
+    $userData['wallet_balance'] = $walletBalance;
+    $userData['words_submitted'] = $wordsSubmitted;
+    $userData['translator_languages_names'] = $translatorLanguagesNames;
 
-        return response()->json($userData);
-    });
-    // =========================================================================
+    return response()->json($userData);
+});
 
-    Route::middleware('auth:sanctum')->get('/users/{id}/profile', function (Request $request, $id) {
+// =========================================================================
+// PERFIL PÚBLICO DE OUTRO UTILIZADOR
+// =========================================================================
+Route::middleware('auth:sanctum')->get('/users/{id}/profile', function (Request $request, $id) {
     $user = \App\Models\User::with('languages')->find($id);
     if (!$user) return response()->json(['error' => 'Utilizador não encontrado'], 404);
         
-        // Verifica se eu bloqueei este utilizador
-        $isBlocked = \App\Models\Block::where('user_id', $request->user()->id)->where('blocked_user_id', $id)->exists();
+    $isBlocked = \App\Models\Block::where('user_id', $request->user()->id)->where('blocked_user_id', $id)->exists();
+    $isFollowing = DB::table('followers')->where('user_id', $id)->where('follower_id', $request->user()->id)->exists();
+    $followersCount = DB::table('followers')->where('user_id', $id)->count();
+    $followingCount = DB::table('followers')->where('follower_id', $id)->count();
 
+    $idadeCalculada = 0;
+    if ($user->date_of_birth) {
+        $idadeCalculada = \Carbon\Carbon::parse($user->date_of_birth)->age;
+    }
 
-        // Verifica se eu sigo este utilizador
-        $isFollowing = DB::table('followers')->where('user_id', $id)->where('follower_id', $request->user()->id)->exists();
-        
-        // Contadores
-        $followersCount = DB::table('followers')->where('user_id', $id)->count();
-        $followingCount = DB::table('followers')->where('follower_id', $id)->count();   
+    return response()->json([
+        'id' => $user->id,
+        'name' => $user->name,
+        'bio' => $user->bio,
+        'location' => $user->location,
+        'age' => $idadeCalculada,
+        'profile_photo' => $user->profile_photo,
+        'extra_photos' => $user->extra_photos,
+        'last_seen_at' => $user->last_seen_at,
+        'is_premium' => $user->isPremiumActive(),
+        'languages' => $user->languages,
+        'is_blocked' => $isBlocked,
+        'is_following' => $isFollowing,
+        'followers_count' => $followersCount, 
+        'following_count' => $followingCount, 
+    ]);
+});
 
-
-        //Calcular a idade
-        $idadeCalculada = 0;
-        if ($user->date_of_birth) {
-            $idadeCalculada = \Carbon\Carbon::parse($user->date_of_birth)->age;
-        }
-
-        return response()->json([
-            'id' => $user->id,
-            'name' => $user->name,
-            'bio' => $user->bio,
-            'location' => $user->location,
-            'age' => $idadeCalculada, // <-- Envia a idade calculada
-            'profile_photo' => $user->profile_photo,
-            'extra_photos' => $user->extra_photos,
-            'last_seen_at' => $user->last_seen_at,
-            'is_premium' => $user->isPremiumActive(),
-            'languages' => $user->languages,
-            'is_blocked' => $isBlocked,
-            'is_following' => $isFollowing,
-            'followers_count' => $followersCount, 
-            'following_count' => $followingCount, 
-        ]);
-    });
-
-    Route::middleware('auth:sanctum')->post('/users/{id}/follow', function (Request $request, $id) {
+// =========================================================================
+// SEGUIR / DEIXAR DE SEGUIR
+// =========================================================================
+Route::middleware('auth:sanctum')->post('/users/{id}/follow', function (Request $request, $id) {
     $myId = $request->user()->id;
     if ($myId == $id) return response()->json(['error' => 'Não podes seguir-te a ti mesmo.'], 400);
 
@@ -432,19 +426,40 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
         DB::table('followers')->where('user_id', $id)->where('follower_id', $myId)->delete();
         return response()->json(['status' => 'unfollowed', 'mensagem' => 'Deixaste de seguir.']);
     } else {
-         DB::table('app_notifications')->insert([
-        'user_id' => $id,
-        'related_user_id' => $myId,
-        'title' => 'Novo Seguidor',
-        'message' => $request->user()->name . ' começou a seguir-te.',
-        'type' => 'follow',
-        'created_at' => now(),
-        'updated_at' => now()
-    ]);
+        DB::table('followers')->insert([
+            'user_id' => $id, 
+            'follower_id' => $myId, 
+            'created_at' => now(), 
+            'updated_at' => now()
+        ]);
+
+        // PROTEÇÃO ANTI-SPAM DE NOTIFICAÇÕES (Só notifica se não houver uma igual nas últimas 24h)
+        $jaNotificado = DB::table('app_notifications')
+            ->where('user_id', $id)
+            ->where('related_user_id', $myId)
+            ->where('type', 'follow')
+            ->where('created_at', '>=', now()->subHours(24))
+            ->exists();
+
+        if (!$jaNotificado) {
+            DB::table('app_notifications')->insert([
+                'user_id' => $id,
+                'related_user_id' => $myId,
+                'title' => 'Novo Seguidor',
+                'message' => $request->user()->name . ' começou a seguir-te.',
+                'type' => 'follow',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+        }
+
         return response()->json(['status' => 'followed', 'mensagem' => 'Começaste a seguir.']);
     }
 });
 
+// =========================================================================
+// ATUALIZAR DADOS DO PERFIL
+// =========================================================================
 Route::middleware('auth:sanctum')->post('/user/profile/update', function (Request $request) {
     $user = $request->user();
     
@@ -465,7 +480,9 @@ Route::middleware('auth:sanctum')->post('/user/profile/update', function (Reques
     return response()->json(['status' => 'sucesso', 'completion' => (int) $user->profile_completion]);
 });
 
-// Obter referências de um utilizador
+// =========================================================================
+// REFERÊNCIAS
+// =========================================================================
 Route::middleware('auth:sanctum')->get('/users/{id}/references', function ($id) {
     $refs = \App\Models\Reference::with('reviewer:id,name,profile_photo')
                 ->where('user_id', $id)
@@ -474,7 +491,6 @@ Route::middleware('auth:sanctum')->get('/users/{id}/references', function ($id) 
     return response()->json($refs);
 });
 
-// Adicionar uma referência
 Route::middleware('auth:sanctum')->post('/users/{id}/references', function (Request $request, $id) {
     $request->validate(['content' => 'required|string|max:500']);
     
@@ -491,12 +507,13 @@ Route::middleware('auth:sanctum')->post('/users/{id}/references', function (Requ
     return response()->json(['status' => 'sucesso', 'data' => $ref], 201);
 });
 
-// 1. Registar uma visita
+// =========================================================================
+// VISITAS E VISITANTES (PREMIUM)
+// =========================================================================
 Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $request, $id) {
     $myId = $request->user()->id;
     if ($myId == $id) return response()->json(['status' => 'ok']);
 
-    // Regista a visita (sempre, para podermos contar no futuro)
     DB::table('profile_visitors')->insert([
         'user_id' => $id,
         'visitor_id' => $myId,
@@ -504,7 +521,6 @@ Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $
         'updated_at' => now()
     ]);
 
-    // Cria a notificação apenas se não foi notificado nas últimas 24h para evitar spam
     $jaNotificado = DB::table('app_notifications')
         ->where('user_id', $id)
         ->where('related_user_id', $myId)
@@ -523,16 +539,14 @@ Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $
             'updated_at' => now()
         ]);
     }
-    
     return response()->json(['status' => 'ok']);
 });
 
-// 2. Listar Visitantes (BLOQUEIO PREMIUM RIGOROSO)
 Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request $request, $id) {
     $user = \App\Models\User::find($id);
     if (!$user) return response()->json(['error' => 'User not found'], 404);
 
-    // AQUI ESTÁ A PROTEÇÃO
+    // PROTEÇÃO PREMIUM: Se o utilizador logado não for premium, recebe 403
     if (!$user->isPremiumActive()) {
         return response()->json(['error' => 'premium_required', 'mensagem' => 'A lista de visitantes é uma funcionalidade Premium.'], 403);
     }
@@ -548,27 +562,9 @@ Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request
     return response()->json($visitors);
 });
 
-// 2. Listar Visitantes (Apenas Premium)
-Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request $request, $id) {
-    $user = \App\Models\User::find($id);
-    if (!$user) return response()->json(['error' => 'User not found'], 404);
-
-    if (!$user->isPremiumActive()) {
-        return response()->json(['error' => 'premium_required', 'mensagem' => 'A lista de visitantes é uma funcionalidade Premium.'], 403);
-    }
-
-    $visitors = DB::table('profile_visitors')
-        ->join('users', 'profile_visitors.visitor_id', '=', 'users.id')
-        ->where('profile_visitors.user_id', $id)
-        ->select('users.id', 'users.name', 'users.profile_photo', 'profile_visitors.created_at')
-        ->orderBy('profile_visitors.created_at', 'desc')
-        ->take(50)
-        ->get();
-
-    return response()->json($visitors);
-});
-
-// 3. Listar Notificações
+// =========================================================================
+// NOTIFICAÇÕES
+// =========================================================================
 Route::middleware('auth:sanctum')->get('/user/notifications', function (Request $request) {
     $notificacoes = DB::table('app_notifications')
         ->where('user_id', $request->user()->id)
@@ -584,7 +580,6 @@ Route::middleware('auth:sanctum')->get('/user/notifications', function (Request 
     return response()->json(['data' => $notificacoes, 'unread_count' => $unreadCount]);
 });
 
-// 4. Marcar notificação como lida
 Route::middleware('auth:sanctum')->post('/user/notifications/{id}/read', function (Request $request, $id) {
     DB::table('app_notifications')
         ->where('id', $id)
@@ -593,263 +588,265 @@ Route::middleware('auth:sanctum')->post('/user/notifications/{id}/read', functio
     return response()->json(['status' => 'ok']);
 });
 
-    Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
-        $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
-        $user = $request->user();
+// =========================================================================
+// FOTOS DE PERFIL
+// =========================================================================
+Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
+    $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
+    $user = $request->user();
 
-        try {
-            $uploadApi = new UploadApi();
-            $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
-                'folder' => 'linguaviva/profiles'
-            ]);
-            $url = $result['secure_url'];
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
-        }
-
-        $user->profile_photo = $url;
-        $completion = 20;
-        if ($user->age) $completion += 10;
-        if ($user->location) $completion += 10;
-        if ($user->bio) $completion += 10;
-        if ($user->profile_photo) $completion += 20;
-        if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
-        
-        $user->profile_completion = min($completion, 100);
-        $user->save();
-        
-        return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
-    });
-
-    Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
-        $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
-        $user = $request->user();
-        $fotosExtras = $user->extra_photos ?? [];
-
-        try {
-            $uploadApi = new UploadApi();
-            $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
-                'folder' => 'linguaviva/profiles/extras'
-            ]);
-            $url = $result['secure_url'];
-        } catch (\Exception $e) {
-            return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
-        }
-
-        $fotosExtras[] = $url;
-        $user->extra_photos = $fotosExtras;
-        
-        $completion = 20;
-        if ($user->age) $completion += 10;
-        if ($user->location) $completion += 10;
-        if ($user->bio) $completion += 10;
-        if ($user->profile_photo) $completion += 20;
-        if (count($fotosExtras) >= 3) $completion += 30;
-        
-        $user->profile_completion = min($completion, 100);
-        $user->save();
-        
-        return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
-    });
-
-    Route::middleware('auth:sanctum')->post('/user/profile/extra-photo/delete', function (Request $request) {
-        $request->validate(['url' => 'required|string']);
-        $user = $request->user();
-        $fotosExtras = $user->extra_photos ?? [];
-
-        // Remove a foto que corresponde ao URL enviado
-        $fotosExtras = array_values(array_filter($fotosExtras, function($foto) use ($request) {
-            return $foto !== $request->url;
-        }));
-
-        $user->extra_photos = $fotosExtras;
-        
-        // Recalcular a percentagem do perfil
-        $completion = 20;
-        if ($user->age) $completion += 10;
-        if ($user->location) $completion += 10;
-        if ($user->bio) $completion += 10;
-        if ($user->profile_photo) $completion += 20;
-        if (count($fotosExtras) >= 3) $completion += 30;
-        
-        $user->profile_completion = min($completion, 100);
-        $user->save();
-        
-        return response()->json(['status' => 'sucesso', 'extra_photos' => $user->extra_photos, 'completion' => (int) $user->profile_completion]);
-    });
-
-    Route::middleware('auth:sanctum')->post('/users/{id}/block', function (Request $request, $id) {
-        $myId = $request->user()->id;
-        if ($myId == $id) return response()->json(['error' => 'Não podes bloquear-te a ti mesmo.'], 400);
-        $block = \App\Models\Block::where('user_id', $myId)->where('blocked_user_id', $id)->first();
-        if ($block) {
-            $block->delete();
-            return response()->json(['status' => 'unblocked', 'mensagem' => 'Utilizador desbloqueado.']);
-        } else {
-            \App\Models\Block::create(['user_id' => $myId, 'blocked_user_id' => $id]);
-            return response()->json(['status' => 'blocked', 'mensagem' => 'Utilizador bloqueado.']);
-        }
-    });
-
-    Route::middleware('auth:sanctum')->post('/users/{id}/report', function (Request $request, $id) {
-        $request->validate(['reason' => 'required|string', 'details' => 'nullable|string', 'attachment' => 'nullable|image|mimes:jpeg,png,jpg|max:4096']);
-        $path = null;
-        if ($request->hasFile('attachment')) {
-            $path = asset('storage/' . $request->file('attachment')->store('reports', 'public'));
-        }
-        \App\Models\Report::create(['reporter_id' => $request->user()->id, 'reported_id' => $id, 'reason' => $request->reason, 'details' => $request->details, 'attachment' => $path]);
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Denúncia enviada. Obrigado por nos ajudar a manter a comunidade segura.']);
-    });
-
-    Route::middleware('auth:sanctum')->post('/translator/apply', function (Request $request) {
-        $request->validate([
-            'language_ids' => 'required|array',
-            'video' => 'required|file|mimes:mp4,mov,avi|max:20480',
-            'experience' => 'nullable|string'
+    try {
+        $uploadApi = new UploadApi();
+        $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+            'folder' => 'linguaviva/profiles'
         ]);
+        $url = $result['secure_url'];
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+    }
 
-        $user = $request->user();
-        $videoPath = $request->file('video')->store('applications', 'public');
+    $user->profile_photo = $url;
+    $completion = 20;
+    if ($user->age) $completion += 10;
+    if ($user->location) $completion += 10;
+    if ($user->bio) $completion += 10;
+    if ($user->profile_photo) $completion += 20;
+    if ($user->extra_photos && count($user->extra_photos) >= 3) $completion += 30;
+    
+    $user->profile_completion = min($completion, 100);
+    $user->save();
+    
+    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
+});
 
-        \App\Models\TranslatorApplication::create([
-            'user_id' => $user->id,
-            'language_requested' => json_encode($request->language_ids),
-            'experience' => $request->experience ?? '',
-            'video_path' => asset('storage/' . $videoPath),
+Route::middleware('auth:sanctum')->post('/user/profile/extra-photo', function (Request $request) {
+    $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
+    $user = $request->user();
+    $fotosExtras = $user->extra_photos ?? [];
+
+    try {
+        $uploadApi = new UploadApi();
+        $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+            'folder' => 'linguaviva/profiles/extras'
         ]);
+        $url = $result['secure_url'];
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Erro ao carregar imagem: ' . $e->getMessage()], 500);
+    }
 
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Candidatura enviada! Aguarda aprovação.']);
-    });
+    $fotosExtras[] = $url;
+    $user->extra_photos = $fotosExtras;
+    
+    $completion = 20;
+    if ($user->age) $completion += 10;
+    if ($user->location) $completion += 10;
+    if ($user->bio) $completion += 10;
+    if ($user->profile_photo) $completion += 20;
+    if (count($fotosExtras) >= 3) $completion += 30;
+    
+    $user->profile_completion = min($completion, 100);
+    $user->save();
+    
+    return response()->json(['status' => 'sucesso', 'url' => $url, 'completion' => (int) $user->profile_completion]);
+});
 
-    Route::middleware('auth:sanctum')->post('/translator/add-language', function (Request $request) {
-        $request->validate(['language_id' => 'required|exists:languages,id']);
-        $user = $request->user();
-        if (!$user->is_translator) return response()->json(['error' => 'Apenas tradutores podem adicionar línguas.'], 403);
-        $currentLanguages = $user->translator_languages ?? [];
-        if (in_array($request->language_id, $currentLanguages)) return response()->json(['status' => 'erro', 'mensagem' => 'Já traduzes esta língua.'], 400);
-        $currentLanguages[] = $request->language_id;
-        $user->translator_languages = $currentLanguages;
-        $user->save();
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Nova língua adicionada ao teu perfil de tradutor!']);
-    });
+Route::middleware('auth:sanctum')->post('/user/profile/extra-photo/delete', function (Request $request) {
+    $request->validate(['url' => 'required|string']);
+    $user = $request->user();
+    $fotosExtras = $user->extra_photos ?? [];
 
-    // Rota para eliminar a conta
-    Route::middleware('auth:sanctum')->delete('/user/delete', function (Request $request) {
-        $user = $request->user();
-        $user->tokens()->delete();
-        $user->delete();
-        return response()->json(['status' => 'sucesso', 'mensagem' => 'Conta eliminada permanentemente.']);
-    });
+    $fotosExtras = array_values(array_filter($fotosExtras, function($foto) use ($request) {
+        return $foto !== $request->url;
+    }));
 
-    // Pedir link de recuperação
-    Route::post('/forgot-password', function (Request $request) {
-        $request->validate(['email' => 'required|email']);
-        $status = Password::sendResetLink($request->only('email'));
+    $user->extra_photos = $fotosExtras;
+    
+    $completion = 20;
+    if ($user->age) $completion += 10;
+    if ($user->location) $completion += 10;
+    if ($user->bio) $completion += 10;
+    if ($user->profile_photo) $completion += 20;
+    if (count($fotosExtras) >= 3) $completion += 30;
+    
+    $user->profile_completion = min($completion, 100);
+    $user->save();
+    
+    return response()->json(['status' => 'sucesso', 'extra_photos' => $user->extra_photos, 'completion' => (int) $user->profile_completion]);
+});
 
-        return $status === Password::RESET_LINK_SENT
-                    ? response()->json(['status' => 'sucesso', 'mensagem' => 'Link enviado para o teu e-mail.'])
-                    : response()->json(['status' => 'erro', 'mensagem' => 'Não encontrámos esse e-mail.'], 400);
-    });
+// =========================================================================
+// BLOQUEIOS E DENÚNCIAS
+// =========================================================================
+Route::middleware('auth:sanctum')->post('/users/{id}/block', function (Request $request, $id) {
+    $myId = $request->user()->id;
+    if ($myId == $id) return response()->json(['error' => 'Não podes bloquear-te a ti mesmo.'], 400);
+    $block = \App\Models\Block::where('user_id', $myId)->where('blocked_user_id', $id)->first();
+    if ($block) {
+        $block->delete();
+        return response()->json(['status' => 'unblocked', 'mensagem' => 'Utilizador desbloqueado.']);
+    } else {
+        \App\Models\Block::create(['user_id' => $myId, 'blocked_user_id' => $id]);
+        return response()->json(['status' => 'blocked', 'mensagem' => 'Utilizador bloqueado.']);
+    }
+});
 
-    // Gravar a nova password
-    Route::post('/reset-password', function (Request $request) {
-        $request->validate([
-            'token' => 'required',
-            'email' => 'required|email',
-            'password' => 'required|min:6|confirmed',
-        ]);
+Route::middleware('auth:sanctum')->post('/users/{id}/report', function (Request $request, $id) {
+    $request->validate(['reason' => 'required|string', 'details' => 'nullable|string', 'attachment' => 'nullable|image|mimes:jpeg,png,jpg|max:4096']);
+    $path = null;
+    if ($request->hasFile('attachment')) {
+        $path = asset('storage/' . $request->file('attachment')->store('reports', 'public'));
+    }
+    \App\Models\Report::create(['reporter_id' => $request->user()->id, 'reported_id' => $id, 'reason' => $request->reason, 'details' => $request->details, 'attachment' => $path]);
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Denúncia enviada. Obrigado por nos ajudar a manter a comunidade segura.']);
+});
 
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, $password) {
-                $user->forceFill(['password' => Hash::make($password)])->save();
-            }
-        );
+// =========================================================================
+// TRADUTOR
+// =========================================================================
+Route::middleware('auth:sanctum')->post('/translator/apply', function (Request $request) {
+    $request->validate([
+        'language_ids' => 'required|array',
+        'video' => 'required|file|mimes:mp4,mov,avi|max:20480',
+        'experience' => 'nullable|string'
+    ]);
 
-        return $status === Password::PASSWORD_RESET
-                    ? response()->json(['status' => 'sucesso', 'mensagem' => 'Password alterada com sucesso!'])
-                    : response()->json(['status' => 'erro', 'mensagem' => 'Token inválido ou expirado.'], 400);
-    });
+    $user = $request->user();
+    $videoPath = $request->file('video')->store('applications', 'public');
 
-    // Rota para gerar o token de acesso à sala de voz
-    Route::middleware('auth:sanctum')->post('/zego/token', function (Request $request) {
-        $request->validate(['room_id' => 'required|string']);
+    \App\Models\TranslatorApplication::create([
+        'user_id' => $user->id,
+        'language_requested' => json_encode($request->language_ids),
+        'experience' => $request->experience ?? '',
+        'video_path' => asset('storage/' . $videoPath),
+    ]);
 
-        $user = $request->user();
-        $appId = (int) env('ZEGO_APP_ID');
-        $secret = env('ZEGO_SERVER_SECRET');
-        $userId = (string) $user->id;
-        $roomId = $request->room_id;
-        $effectiveTimeInSeconds = 3600;
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Candidatura enviada! Aguarda aprovação.']);
+});
 
-        $token = ZegoServerAssistant::generateToken04($appId, $userId, $secret, $effectiveTimeInSeconds, '');
+Route::middleware('auth:sanctum')->post('/translator/add-language', function (Request $request) {
+    $request->validate(['language_id' => 'required|exists:languages,id']);
+    $user = $request->user();
+    if (!$user->is_translator) return response()->json(['error' => 'Apenas tradutores podem adicionar línguas.'], 403);
+    $currentLanguages = $user->translator_languages ?? [];
+    if (in_array($request->language_id, $currentLanguages)) return response()->json(['status' => 'erro', 'mensagem' => 'Já traduzes esta língua.'], 400);
+    $currentLanguages[] = $request->language_id;
+    $user->translator_languages = $currentLanguages;
+    $user->save();
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Nova língua adicionada ao teu perfil de tradutor!']);
+});
 
-        if ($token->code === ZegoErrorCodes::success) {
-            return response()->json(['token' => $token->token]);
+// =========================================================================
+// CONTA
+// =========================================================================
+Route::middleware('auth:sanctum')->delete('/user/delete', function (Request $request) {
+    $user = $request->user();
+    $user->tokens()->delete();
+    $user->delete();
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Conta eliminada permanentemente.']);
+});
+
+Route::post('/forgot-password', function (Request $request) {
+    $request->validate(['email' => 'required|email']);
+    $status = Password::sendResetLink($request->only('email'));
+
+    return $status === Password::RESET_LINK_SENT
+                ? response()->json(['status' => 'sucesso', 'mensagem' => 'Link enviado para o teu e-mail.'])
+                : response()->json(['status' => 'erro', 'mensagem' => 'Não encontrámos esse e-mail.'], 400);
+});
+
+Route::post('/reset-password', function (Request $request) {
+    $request->validate([
+        'token' => 'required',
+        'email' => 'required|email',
+        'password' => 'required|min:6|confirmed',
+    ]);
+
+    $status = Password::reset(
+        $request->only('email', 'password', 'password_confirmation', 'token'),
+        function ($user, $password) {
+            $user->forceFill(['password' => Hash::make($password)])->save();
         }
+    );
 
-        return response()->json(['error' => 'Não foi possível gerar o token de acesso.'], 500);
-    });
+    return $status === Password::PASSWORD_RESET
+                ? response()->json(['status' => 'sucesso', 'mensagem' => 'Password alterada com sucesso!'])
+                : response()->json(['status' => 'erro', 'mensagem' => 'Token inválido ou expirado.'], 400);
+});
 
-    // Listar salas
-    Route::middleware('auth:sanctum')->get('/rooms', function () {
-        $rooms = \App\Models\VoiceRoom::where('is_active', true)
-            ->with(['host:id,name,profile_photo', 'language:id,name'])
-            ->withCount('participants')
-            ->orderBy('created_at', 'desc')
-            ->get();
-        return response()->json($rooms);
-    });
+// =========================================================================
+// ZEGO (SALAS DE VOZ)
+// =========================================================================
+Route::middleware('auth:sanctum')->post('/zego/token', function (Request $request) {
+    $request->validate(['room_id' => 'required|string']);
 
-    // Criar sala (A ÚNICA ROTA POST /rooms AGORA)
-    Route::middleware('auth:sanctum')->post('/rooms', function (Request $request) {
-        $request->validate([
-            'title' => 'required|string|max:100',
-            'description' => 'nullable|string|max:255',
-            'language_id' => 'required|exists:languages,id',
-        ]);
+    $user = $request->user();
+    $appId = (int) env('ZEGO_APP_ID');
+    $secret = env('ZEGO_SERVER_SECRET');
+    $userId = (string) $user->id;
+    $roomId = $request->room_id;
+    $effectiveTimeInSeconds = 3600;
 
-        $room = \App\Models\VoiceRoom::create([
-            'title' => $request->title,
-            'description' => $request->description,
-            'host_id' => $request->user()->id,
-            'language_id' => $request->language_id,
-            'is_active' => true,
-        ]);
+    $token = ZegoServerAssistant::generateToken04($appId, $userId, $secret, $effectiveTimeInSeconds, '');
 
-        return response()->json(['status' => 'sucesso', 'room' => $room], 201);
-    });
+    if ($token->code === ZegoErrorCodes::success) {
+        return response()->json(['token' => $token->token]);
+    }
 
-    // Entrar na sala (registar participante)
-    Route::middleware('auth:sanctum')->post('/rooms/{id}/join', function (Request $request, $id) {
-        \DB::table('room_participants')->updateOrInsert(
-            ['room_id' => $id, 'user_id' => $request->user()->id],
-            ['updated_at' => now(), 'created_at' => now()]
-        );
-        return response()->json(['status' => 'ok']);
-    });
+    return response()->json(['error' => 'Não foi possível gerar o token de acesso.'], 500);
+});
 
-    // Sair da sala (remover participante)
-    Route::middleware('auth:sanctum')->post('/rooms/{id}/leave', function (Request $request, $id) {
-        \DB::table('room_participants')->where('room_id', $id)->where('user_id', $request->user()->id)->delete();
-        return response()->json(['status' => 'ok']);
-    });
+Route::middleware('auth:sanctum')->get('/rooms', function () {
+    $rooms = \App\Models\VoiceRoom::where('is_active', true)
+        ->with(['host:id,name,profile_photo', 'language:id,name'])
+        ->withCount('participants')
+        ->orderBy('created_at', 'desc')
+        ->get();
+    return response()->json($rooms);
+});
 
-    // Fechar uma sala (apenas o host)
-    Route::middleware('auth:sanctum')->delete('/rooms/{id}', function (Request $request, $id) {
-        $room = \App\Models\VoiceRoom::findOrFail($id);
-        if ($room->host_id !== $request->user()->id) {
-            return response()->json(['error' => 'Apenas o anfitrião pode fechar a sala.'], 403);
-        }
-        $room->is_active = false;
-        $room->save();
-        return response()->json(['status' => 'sucesso']);
-    });
+Route::middleware('auth:sanctum')->post('/rooms', function (Request $request) {
+    $request->validate([
+        'title' => 'required|string|max:100',
+        'description' => 'nullable|string|max:255',
+        'language_id' => 'required|exists:languages,id',
+    ]);
 
+    $room = \App\Models\VoiceRoom::create([
+        'title' => $request->title,
+        'description' => $request->description,
+        'host_id' => $request->user()->id,
+        'language_id' => $request->language_id,
+        'is_active' => true,
+    ]);
 
-    // Rota para listar os utilizadores que eu bloquei
-    Route::middleware('auth:sanctum')->get('/blocked-users', function (Request $request) {
-        $blockedIds = \App\Models\Block::where('user_id', $request->user()->id)->pluck('blocked_user_id');
-        $users = \App\Models\User::whereIn('id', $blockedIds)->get(['id', 'name', 'profile_photo']);
-        return response()->json($users);
-    });
+    return response()->json(['status' => 'sucesso', 'room' => $room], 201);
+});
+
+Route::middleware('auth:sanctum')->post('/rooms/{id}/join', function (Request $request, $id) {
+    \DB::table('room_participants')->updateOrInsert(
+        ['room_id' => $id, 'user_id' => $request->user()->id],
+        ['updated_at' => now(), 'created_at' => now()]
+    );
+    return response()->json(['status' => 'ok']);
+});
+
+Route::middleware('auth:sanctum')->post('/rooms/{id}/leave', function (Request $request, $id) {
+    \DB::table('room_participants')->where('room_id', $id)->where('user_id', $request->user()->id)->delete();
+    return response()->json(['status' => 'ok']);
+});
+
+Route::middleware('auth:sanctum')->delete('/rooms/{id}', function (Request $request, $id) {
+    $room = \App\Models\VoiceRoom::findOrFail($id);
+    if ($room->host_id !== $request->user()->id) {
+        return response()->json(['error' => 'Apenas o anfitrião pode fechar a sala.'], 403);
+    }
+    $room->is_active = false;
+    $room->save();
+    return response()->json(['status' => 'sucesso']);
+});
+
+Route::middleware('auth:sanctum')->get('/blocked-users', function (Request $request) {
+    $blockedIds = \App\Models\Block::where('user_id', $request->user()->id)->pluck('blocked_user_id');
+    $users = \App\Models\User::whereIn('id', $blockedIds)->get(['id', 'name', 'profile_photo']);
+    return response()->json($users);
+});
