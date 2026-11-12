@@ -456,6 +456,8 @@ Route::middleware('auth:sanctum')->post('/user/profile/update', function (Reques
     return response()->json(['status' => 'sucesso', 'completion' => (int) $user->profile_completion]);
 });
 
+
+
     Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
         $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
         $user = $request->user();
