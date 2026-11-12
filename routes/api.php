@@ -426,12 +426,14 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
         DB::table('followers')->where('user_id', $id)->where('follower_id', $myId)->delete();
         return response()->json(['status' => 'unfollowed', 'mensagem' => 'Deixaste de seguir.']);
     } else {
-        DB::table('followers')->insert([
-            'user_id' => $id, 
-            'follower_id' => $myId, 
-            'created_at' => now(), 
-            'updated_at' => now()
-        ]);
+         DB::table('app_notifications')->insert([
+        'user_id' => $id,
+        'title' => 'Novo Seguidor',
+        'message' => $request->user()->name . ' começou a seguir-te.',
+        'type' => 'follow',
+        'created_at' => now(),
+        'updated_at' => now()
+    ]);
         return response()->json(['status' => 'followed', 'mensagem' => 'Começaste a seguir.']);
     }
 });
@@ -456,7 +458,108 @@ Route::middleware('auth:sanctum')->post('/user/profile/update', function (Reques
     return response()->json(['status' => 'sucesso', 'completion' => (int) $user->profile_completion]);
 });
 
+// Obter referências de um utilizador
+Route::middleware('auth:sanctum')->get('/users/{id}/references', function ($id) {
+    $refs = \App\Models\Reference::with('reviewer:id,name,profile_photo')
+                ->where('user_id', $id)
+                ->orderBy('created_at', 'desc')
+                ->get();
+    return response()->json($refs);
+});
 
+// Adicionar uma referência
+Route::middleware('auth:sanctum')->post('/users/{id}/references', function (Request $request, $id) {
+    $request->validate(['content' => 'required|string|max:500']);
+    
+    if ($request->user()->id == $id) {
+        return response()->json(['error' => 'Não podes escrever uma referência para ti mesmo.'], 400);
+    }
+
+    $ref = \App\Models\Reference::create([
+        'user_id' => $id,
+        'reviewer_id' => $request->user()->id,
+        'content' => $request->content
+    ]);
+
+    return response()->json(['status' => 'sucesso', 'data' => $ref], 201);
+});
+
+    // 1. Registar uma visita ao perfil
+Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $request, $id) {
+    $myId = $request->user()->id;
+    if ($myId == $id) return response()->json(['status' => 'ok']);
+
+    // Evitar notificar múltiplas vezes no mesmo dia pela mesma pessoa
+    $jaVisitouHoje = DB::table('profile_visitors')
+        ->where('user_id', $id)
+        ->where('visitor_id', $myId)
+        ->whereDate('created_at', now()->toDateString())
+        ->exists();
+
+    if (!$jaVisitouHoje) {
+        DB::table('profile_visitors')->insert([
+            'user_id' => $id,
+            'visitor_id' => $myId,
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+
+        DB::table('app_notifications')->insert([
+            'user_id' => $id,
+            'title' => 'Nova Visita ao Perfil',
+            'message' => $request->user()->name . ' visitou o teu perfil.',
+            'type' => 'visit',
+            'created_at' => now(),
+            'updated_at' => now()
+        ]);
+    }
+    return response()->json(['status' => 'ok']);
+});
+
+// 2. Listar Visitantes (Apenas Premium)
+Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request $request, $id) {
+    $user = \App\Models\User::find($id);
+    if (!$user) return response()->json(['error' => 'User not found'], 404);
+
+    if (!$user->isPremiumActive()) {
+        return response()->json(['error' => 'premium_required', 'mensagem' => 'A lista de visitantes é uma funcionalidade Premium.'], 403);
+    }
+
+    $visitors = DB::table('profile_visitors')
+        ->join('users', 'profile_visitors.visitor_id', '=', 'users.id')
+        ->where('profile_visitors.user_id', $id)
+        ->select('users.id', 'users.name', 'users.profile_photo', 'profile_visitors.created_at')
+        ->orderBy('profile_visitors.created_at', 'desc')
+        ->take(50)
+        ->get();
+
+    return response()->json($visitors);
+});
+
+// 3. Listar Notificações
+Route::middleware('auth:sanctum')->get('/user/notifications', function (Request $request) {
+    $notificacoes = DB::table('app_notifications')
+        ->where('user_id', $request->user()->id)
+        ->orderBy('created_at', 'desc')
+        ->take(50)
+        ->get();
+        
+    $unreadCount = DB::table('app_notifications')
+        ->where('user_id', $request->user()->id)
+        ->where('is_read', false)
+        ->count();
+
+    return response()->json(['data' => $notificacoes, 'unread_count' => $unreadCount]);
+});
+
+// 4. Marcar notificação como lida
+Route::middleware('auth:sanctum')->post('/user/notifications/{id}/read', function (Request $request, $id) {
+    DB::table('app_notifications')
+        ->where('id', $id)
+        ->where('user_id', $request->user()->id)
+        ->update(['is_read' => true]);
+    return response()->json(['status' => 'ok']);
+});
 
     Route::middleware('auth:sanctum')->post('/user/profile/photo', function (Request $request) {
         $request->validate(['photo' => 'required|image|mimes:jpeg,png,jpg|max:2048']);
