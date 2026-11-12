@@ -491,26 +491,28 @@ Route::middleware('auth:sanctum')->post('/users/{id}/references', function (Requ
     return response()->json(['status' => 'sucesso', 'data' => $ref], 201);
 });
 
-    // 1. Registar uma visita ao perfil
+// 1. Registar uma visita
 Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $request, $id) {
     $myId = $request->user()->id;
     if ($myId == $id) return response()->json(['status' => 'ok']);
 
-    // Evitar notificar múltiplas vezes no mesmo dia pela mesma pessoa
-    $jaVisitouHoje = DB::table('profile_visitors')
+    // Regista a visita (sempre, para podermos contar no futuro)
+    DB::table('profile_visitors')->insert([
+        'user_id' => $id,
+        'visitor_id' => $myId,
+        'created_at' => now(),
+        'updated_at' => now()
+    ]);
+
+    // Cria a notificação apenas se não foi notificado nas últimas 24h para evitar spam
+    $jaNotificado = DB::table('app_notifications')
         ->where('user_id', $id)
-        ->where('visitor_id', $myId)
-        ->whereDate('created_at', now()->toDateString())
+        ->where('related_user_id', $myId)
+        ->where('type', 'visit')
+        ->where('created_at', '>=', now()->subHours(24))
         ->exists();
 
-    if (!$jaVisitouHoje) {
-        DB::table('profile_visitors')->insert([
-            'user_id' => $id,
-            'visitor_id' => $myId,
-            'created_at' => now(),
-            'updated_at' => now()
-        ]);
-
+    if (!$jaNotificado) {
         DB::table('app_notifications')->insert([
             'user_id' => $id,
             'related_user_id' => $myId,
@@ -521,7 +523,29 @@ Route::middleware('auth:sanctum')->post('/users/{id}/visit', function (Request $
             'updated_at' => now()
         ]);
     }
+    
     return response()->json(['status' => 'ok']);
+});
+
+// 2. Listar Visitantes (BLOQUEIO PREMIUM RIGOROSO)
+Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request $request, $id) {
+    $user = \App\Models\User::find($id);
+    if (!$user) return response()->json(['error' => 'User not found'], 404);
+
+    // AQUI ESTÁ A PROTEÇÃO
+    if (!$user->isPremiumActive()) {
+        return response()->json(['error' => 'premium_required', 'mensagem' => 'A lista de visitantes é uma funcionalidade Premium.'], 403);
+    }
+
+    $visitors = DB::table('profile_visitors')
+        ->join('users', 'profile_visitors.visitor_id', '=', 'users.id')
+        ->where('profile_visitors.user_id', $id)
+        ->select('users.id', 'users.name', 'users.profile_photo', 'profile_visitors.created_at')
+        ->orderBy('profile_visitors.created_at', 'desc')
+        ->take(50)
+        ->get();
+
+    return response()->json($visitors);
 });
 
 // 2. Listar Visitantes (Apenas Premium)
