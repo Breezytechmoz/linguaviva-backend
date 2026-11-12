@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\AdminController;
 use App\Http\Controllers\TranslatorController;
 use App\Http\Controllers\AuthController;
+use Illuminate\Http\Request; // Importante para a rota de reset
 
 // Rotas de Login Genérico
 Route::get('/login', [AuthController::class, 'showLoginForm'])->name('login');
@@ -24,24 +25,28 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-// Rotas para o Administrador
+// === ROTAS DE LOGIN DO ADMIN (DEVEM FICAR FORA DO MIDDLEWARE AUTH) ===
 Route::get('/admin/login', [AdminController::class, 'showLoginForm'])->name('admin.login');
 Route::post('/admin/login', [AdminController::class, 'login']);
 Route::post('/admin/logout', [AdminController::class, 'logout'])->name('admin.logout');
-Route::post('/admin/users/{id}/toggle-suspend', [AdminController::class, 'toggleSuspend'])->name('admin.toggle-suspend');
-Route::post('/admin/payments/{id}/handle', [AdminController::class, 'handlePayment'])->name('admin.handle-payment');
-Route::post('/admin/translators/{id}/{action}', [AdminController::class, 'approveTranslator'])->name('admin.approve-translator');
-Route::post('/admin/translations/{id}/{action}', [AdminController::class, 'handleTranslation'])->name('admin.handle-translation');
 
-// Rotas Protegidas (Só entram se estiverem logados e forem admin)
+// === ROTAS PROTEGIDAS DO ADMIN ===
 Route::middleware(['auth', 'admin'])->group(function () {
+    // Páginas Principais
     Route::get('/admin', [AdminController::class, 'index'])->name('admin.dashboard');
+    Route::get('/admin/users', [AdminController::class, 'users'])->name('admin.users');
+    Route::get('/admin/payments', [AdminController::class, 'payments'])->name('admin.payments');
+    Route::get('/admin/moderation', [AdminController::class, 'moderation'])->name('admin.moderation');
+    
+    // Ações (Botões)
+    Route::post('/admin/users/{id}/toggle-suspend', [AdminController::class, 'toggleSuspend'])->name('admin.toggle-suspend');
+    Route::post('/admin/payments/{id}/handle', [AdminController::class, 'handlePayment'])->name('admin.handle-payment');
+    Route::post('/admin/translators/{id}/{action}', [AdminController::class, 'approveTranslator'])->name('admin.approve-translator');
+    Route::post('/admin/translations/{id}/{action}', [AdminController::class, 'handleTranslation'])->name('admin.handle-translation');
 });
 
 // Rota que o link do email vai abrir
 Route::get('/reset-password', function (Request $request) {
-    // Por agora, vamos apenas devolver os dados em JSON para poderes testar.
-    // No futuro, podes criar uma view bonita aqui ou redirecionar para a app Flutter.
     return response()->json([
         'mensagem' => 'Link válido! Copia o token e o email para usares na app.',
         'token' => $request->query('token'),

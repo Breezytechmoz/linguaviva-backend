@@ -5,6 +5,11 @@ namespace App\Http\Controllers;
 use Illuminate\Http\Request;
 use App\Models\User;
 use App\Models\Message;
+use App\Models\Report;
+use App\Models\PaymentRequest;
+use App\Models\TranslatorApplication;
+use App\Models\Translation;
+use App\Models\TranslatorWallet;
 use Illuminate\Support\Facades\Auth;
 
 class AdminController extends Controller
@@ -26,12 +31,10 @@ class AdminController extends Controller
         if (Auth::attempt($credentials)) {
             $request->session()->regenerate();
             
-            // Verifica se é admin antes de deixar entrar
             if (Auth::user()->is_admin == 1) {
                 return redirect()->intended('/admin');
             }
             
-            // Se não for admin, desloga e mostra erro
             Auth::logout();
             return back()->withErrors(['email' => 'Não tens permissões de administrador.']);
         }
@@ -40,33 +43,55 @@ class AdminController extends Controller
     }
 
     // 3. O Painel Principal
-          public function index()
+    public function index()
     {
         $totalUsers = User::count();
         $totalMessages = Message::count();
         $users = User::orderBy('created_at', 'desc')->get();
-        $pagamentosPendentes = \App\Models\PaymentRequest::where('status', 'pending')->with('user')->get();
-        $denuncias = \App\Models\Report::where('status', 'pending')->with(['reporter', 'reported'])->get();
+        $pagamentosPendentes = PaymentRequest::where('status', 'pending')->with('user')->get();
         
-        $candidaturas = \App\Models\TranslatorApplication::where('status', 'pending')->with('user')->get();
-        $traducoesPendentes = \App\Models\Translation::where('status', 'pending')->with(['translator', 'language'])->get();
+        // Correção: A tabela de reports não tem 'status', por isso trazemos todas as denúncias
+        $denuncias = Report::with(['reporter', 'reported'])->orderBy('created_at', 'desc')->get();
+        
+        $candidaturas = TranslatorApplication::where('status', 'pending')->with('user')->get();
+        $traducoesPendentes = Translation::where('status', 'pending')->with(['translator', 'language'])->get();
 
         return view('admin.dashboard', compact('totalUsers', 'totalMessages', 'users', 'pagamentosPendentes', 'denuncias', 'candidaturas', 'traducoesPendentes'));
     }
 
-    // Aprovar Tradução e Pagar 0.50 MT
+    // === NOVAS PÁGINAS DA SIDEBAR ===
+    
+    public function users()
+    {
+        $users = User::orderBy('created_at', 'desc')->get();
+        return view('admin.users', compact('users'));
+    }
+
+    public function payments()
+    {
+        $pagamentos = PaymentRequest::with('user')->orderBy('created_at', 'desc')->get();
+        return view('admin.payments', compact('pagamentos'));
+    }
+
+    public function moderation()
+    {
+        $denuncias = Report::with(['reporter', 'reported'])->orderBy('created_at', 'desc')->get();
+        return view('admin.moderation', compact('denuncias'));
+    }
+
+    // === AÇÕES ===
+
     public function handleTranslation($id, $action)
     {
-        $translation = \App\Models\Translation::findOrFail($id);
+        $translation = Translation::findOrFail($id);
         
-        if ($translation->status !== 'pending') return back(); // Evita duplicar pagamentos
+        if ($translation->status !== 'pending') return back();
 
         if ($action === 'approve') {
             $translation->status = 'approved';
             $translation->save();
 
-            // Paga 0.50 MT ao tradutor
-            $wallet = \App\Models\TranslatorWallet::firstOrCreate(['user_id' => $translation->translator_id]);
+            $wallet = TranslatorWallet::firstOrCreate(['user_id' => $translation->translator_id]);
             $wallet->balance += 0.50;
             $wallet->total_earned += 0.50;
             $wallet->save();
@@ -77,17 +102,15 @@ class AdminController extends Controller
         return back();
     }
     
-    // Função para aprovar ou rejeitar
     public function handlePayment(Request $request, $id)
     {
-        $payment = \App\Models\PaymentRequest::findOrFail($id);
-        $action = $request->input('action'); // 'approve' ou 'reject'
+        $payment = PaymentRequest::findOrFail($id);
+        $action = $request->input('action');
 
         if ($action === 'approve') {
             $payment->status = 'approved';
             $payment->save();
 
-            // Ativa o Premium no utilizador por 30 dias
             $user = $payment->user;
             $user->is_premium = true;
             $user->premium_expires_at = now()->addDays(30);
@@ -100,11 +123,10 @@ class AdminController extends Controller
         return back();
     }
     
-        public function toggleSuspend($id)
+    public function toggleSuspend($id)
     {
         $user = User::findOrFail($id);
         
-        // Impede suspender outro admin (ou a si mesmo)
         if ($user->is_admin) {
             return back()->withErrors(['msg' => 'Não podes suspender um administrador.']);
         }
@@ -115,18 +137,9 @@ class AdminController extends Controller
         return back();
     }
 
-    // 4. Terminar sessão
-    public function logout(Request $request)
+    public function approveTranslator($id, $action)
     {
-        Auth::logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
-        return redirect('/admin/login');
-    }
-
-       public function approveTranslator($id, $action)
-    {
-        $app = \App\Models\TranslatorApplication::findOrFail($id);
+        $app = TranslatorApplication::findOrFail($id);
         
         if ($action === 'approve') {
             $app->status = 'approved';
@@ -135,7 +148,6 @@ class AdminController extends Controller
             $user = $app->user;
             $user->is_translator = true;
             
-            // Garante que a língua é guardada como um Array (ex: [3])
             $langs = json_decode($app->language_requested, true);
             if (is_array($langs)) {
                 $user->translator_languages = $langs;
@@ -144,14 +156,19 @@ class AdminController extends Controller
             }
             
             $user->save();
-
-            \App\Models\TranslatorWallet::firstOrCreate(['user_id' => $user->id]);
+            TranslatorWallet::firstOrCreate(['user_id' => $user->id]);
         } else {
             $app->status = 'rejected';
             $app->save();
         }
         return back();
     }
+
+    public function logout(Request $request)
+    {
+        Auth::logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+        return redirect('/admin/login');
+    }
 }
-
-
