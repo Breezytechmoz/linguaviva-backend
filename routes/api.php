@@ -55,6 +55,13 @@ Route::post('/register', function (Request $request) {
     ], 201);
 });
 
+\App\Models\AdminNotification::create([
+    'type' => 'user',
+    'title' => 'Novo Utilizador',
+    'message' => $user->name . ' acabou de se registar.',
+    'url' => route('admin.users'),
+]);
+
 // Rota de Login
 Route::post('/login', function (Request $request) {
     $request->validate([
@@ -333,6 +340,13 @@ Route::middleware('auth:sanctum')->post('/premium/request', function (Request $r
 
     \App\Models\PaymentRequest::create(['user_id' => $request->user()->id, 'amount' => 199.00, 'method' => $request->method, 'transaction_reference' => $request->reference]);
     return response()->json(['status' => 'sucesso', 'mensagem' => 'Pedido enviado! Aguarda a confirmação do administrador.']);
+
+    \App\Models\AdminNotification::create([
+        'type' => 'payment',
+        'title' => 'Novo Pedido Premium',
+        'message' => $request->user()->name . ' enviou um comprovativo.',
+        'url' => route('admin.payments'),
+    ]);
 });
 
 Route::middleware('auth:sanctum')->get('/premium/status', function (Request $request) {
@@ -698,6 +712,13 @@ Route::middleware('auth:sanctum')->post('/users/{id}/report', function (Request 
     }
     \App\Models\Report::create(['reporter_id' => $request->user()->id, 'reported_id' => $id, 'reason' => $request->reason, 'details' => $request->details, 'attachment' => $path]);
     return response()->json(['status' => 'sucesso', 'mensagem' => 'Denúncia enviada. Obrigado por nos ajudar a manter a comunidade segura.']);
+
+    \App\Models\AdminNotification::create([
+        'type' => 'report',
+        'title' => 'Nova Denúncia',
+        'message' => $request->user()->name . ' denunciou um utilizador.',
+        'url' => route('admin.moderation'),
+    ]);
 });
 
 // =========================================================================
@@ -718,6 +739,13 @@ Route::middleware('auth:sanctum')->post('/translator/apply', function (Request $
         'language_requested' => json_encode($request->language_ids),
         'experience' => $request->experience ?? '',
         'video_path' => asset('storage/' . $videoPath),
+    ]);
+
+    \App\Models\AdminNotification::create([
+        'type' => 'translator',
+        'title' => 'Nova Candidatura',
+        'message' => $user->name . ' candidatou-se a tradutor.',
+        'url' => route('admin.dashboard'),
     ]);
 
     return response()->json(['status' => 'sucesso', 'mensagem' => 'Candidatura enviada! Aguarda aprovação.']);

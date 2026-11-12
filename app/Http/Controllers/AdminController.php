@@ -171,4 +171,34 @@ class AdminController extends Controller
         $request->session()->regenerateToken();
         return redirect('/admin/login');
     }
+
+    public function getNotifications()
+    {
+        $notifications = \App\Models\AdminNotification::orderBy('created_at', 'desc')->take(15)->get();
+        
+        // Contadores por categoria (não lidas)
+        $categories = [
+            'user' => \App\Models\AdminNotification::where('type', 'user')->where('is_read', false)->count(),
+            'payment' => \App\Models\AdminNotification::where('type', 'payment')->where('is_read', false)->count(),
+            'report' => \App\Models\AdminNotification::where('type', 'report')->where('is_read', false)->count(),
+            'translator' => \App\Models\AdminNotification::where('type', 'translator')->where('is_read', false)->count(),
+        ];
+        
+        $unreadTotal = array_sum($categories);
+
+        return response()->json([
+            'notifications' => $notifications,
+            'categories' => $categories,
+            'unreadTotal' => $unreadTotal
+        ]);
+    }
+
+    public function markNotificationRead($id)
+    {
+        $notif = \App\Models\AdminNotification::findOrFail($id);
+        $notif->is_read = true;
+        $notif->save();
+        
+        return response()->json(['status' => 'ok']);
+    }
 }

@@ -43,6 +43,9 @@ Route::middleware(['auth', 'admin'])->group(function () {
     Route::post('/admin/payments/{id}/handle', [AdminController::class, 'handlePayment'])->name('admin.handle-payment');
     Route::post('/admin/translators/{id}/{action}', [AdminController::class, 'approveTranslator'])->name('admin.approve-translator');
     Route::post('/admin/translations/{id}/{action}', [AdminController::class, 'handleTranslation'])->name('admin.handle-translation');
+
+    Route::get('/admin/notifications', [AdminController::class, 'getNotifications'])->name('admin.notifications');
+    Route::post('/admin/notifications/{id}/read', [AdminController::class, 'markNotificationRead'])->name('admin.notifications.read');
 });
 
 // Rota que o link do email vai abrir
