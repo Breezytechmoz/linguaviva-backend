@@ -47,6 +47,14 @@ Route::post('/register', function (Request $request) {
 
     $token = $user->createToken('auth_token')->plainTextToken;
 
+    // NOTIFICAÇÃO MOVIDA PARA DENTRO DA ROTA E ANTES DO RETURN
+    \App\Models\AdminNotification::create([
+        'type' => 'user',
+        'title' => 'Novo Utilizador',
+        'message' => $user->name . ' acabou de se registar.',
+        'url' => route('admin.users'),
+    ]);
+
     return response()->json([
         'status' => 'sucesso',
         'mensagem' => 'Conta criada com sucesso!',
@@ -54,13 +62,6 @@ Route::post('/register', function (Request $request) {
         'token' => $token
     ], 201);
 });
-
-\App\Models\AdminNotification::create([
-    'type' => 'user',
-    'title' => 'Novo Utilizador',
-    'message' => $user->name . ' acabou de se registar.',
-    'url' => route('admin.users'),
-]);
 
 // Rota de Login
 Route::post('/login', function (Request $request) {
@@ -173,7 +174,6 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
     $imageUrl = null;
     $audioUrl = null;
 
-    // Upload da Imagem para o Cloudinary
     if ($request->hasFile('image')) {
         try {
             $uploadApi = new UploadApi();
@@ -186,7 +186,6 @@ Route::middleware('auth:sanctum')->post('/messages', function (Request $request)
         }
     }
 
-    // Upload do Áudio para o Cloudinary
     if ($request->hasFile('audio')) {
         try {
             $uploadApi = new UploadApi();
@@ -339,14 +338,16 @@ Route::middleware('auth:sanctum')->post('/premium/request', function (Request $r
     if ($existePendente) return response()->json(['status' => 'erro', 'mensagem' => 'Já tens um pedido pendente. Aguarda a aprovação.'], 400);
 
     \App\Models\PaymentRequest::create(['user_id' => $request->user()->id, 'amount' => 199.00, 'method' => $request->method, 'transaction_reference' => $request->reference]);
-    return response()->json(['status' => 'sucesso', 'mensagem' => 'Pedido enviado! Aguarda a confirmação do administrador.']);
 
+    // NOTIFICAÇÃO MOVIDA PARA ANTES DO RETURN
     \App\Models\AdminNotification::create([
         'type' => 'payment',
         'title' => 'Novo Pedido Premium',
         'message' => $request->user()->name . ' enviou um comprovativo.',
         'url' => route('admin.payments'),
     ]);
+
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Pedido enviado! Aguarda a confirmação do administrador.']);
 });
 
 Route::middleware('auth:sanctum')->get('/premium/status', function (Request $request) {
@@ -447,7 +448,6 @@ Route::middleware('auth:sanctum')->post('/users/{id}/follow', function (Request 
             'updated_at' => now()
         ]);
 
-        // PROTEÇÃO ANTI-SPAM DE NOTIFICAÇÕES (Só notifica se não houver uma igual nas últimas 24h)
         $jaNotificado = DB::table('app_notifications')
             ->where('user_id', $id)
             ->where('related_user_id', $myId)
@@ -560,7 +560,6 @@ Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request
     $user = \App\Models\User::find($id);
     if (!$user) return response()->json(['error' => 'User not found'], 404);
 
-    // PROTEÇÃO PREMIUM: Se o utilizador logado não for premium, recebe 403
     if (!$user->isPremiumActive()) {
         return response()->json(['error' => 'premium_required', 'mensagem' => 'A lista de visitantes é uma funcionalidade Premium.'], 403);
     }
@@ -577,7 +576,7 @@ Route::middleware('auth:sanctum')->get('/users/{id}/visitors', function (Request
 });
 
 // =========================================================================
-// NOTIFICAÇÕES
+// NOTIFICAÇÕES DO APP
 // =========================================================================
 Route::middleware('auth:sanctum')->get('/user/notifications', function (Request $request) {
     $notificacoes = DB::table('app_notifications')
@@ -711,14 +710,16 @@ Route::middleware('auth:sanctum')->post('/users/{id}/report', function (Request 
         $path = asset('storage/' . $request->file('attachment')->store('reports', 'public'));
     }
     \App\Models\Report::create(['reporter_id' => $request->user()->id, 'reported_id' => $id, 'reason' => $request->reason, 'details' => $request->details, 'attachment' => $path]);
-    return response()->json(['status' => 'sucesso', 'mensagem' => 'Denúncia enviada. Obrigado por nos ajudar a manter a comunidade segura.']);
 
+    // NOTIFICAÇÃO MOVIDA PARA ANTES DO RETURN
     \App\Models\AdminNotification::create([
         'type' => 'report',
         'title' => 'Nova Denúncia',
         'message' => $request->user()->name . ' denunciou um utilizador.',
         'url' => route('admin.moderation'),
     ]);
+
+    return response()->json(['status' => 'sucesso', 'mensagem' => 'Denúncia enviada. Obrigado por nos ajudar a manter a comunidade segura.']);
 });
 
 // =========================================================================
