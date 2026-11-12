@@ -383,37 +383,43 @@ Route::middleware('auth:sanctum')->get('/messages/{userId}', function (Request $
     // =========================================================================
 
     Route::middleware('auth:sanctum')->get('/users/{id}/profile', function (Request $request, $id) {
-        $user = \App\Models\User::with('languages')->find($id);
-        if (!$user) return response()->json(['error' => 'Utilizador não encontrado'], 404);
+    $user = \App\Models\User::with('languages')->find($id);
+    if (!$user) return response()->json(['error' => 'Utilizador não encontrado'], 404);
         
         // Verifica se eu bloqueei este utilizador
-        $isBlocked = \App\Models\Block::where('user_id', $request->user()->id)
-                    ->where('blocked_user_id', $id)
-                    ->exists();
+        $isBlocked = \App\Models\Block::where('user_id', $request->user()->id)->where('blocked_user_id', $id)->exists();
 
-    // Verifica se eu sigo este utilizador
-    $isFollowing = DB::table('followers')->where('user_id', $id)->where('follower_id', $request->user()->id)->exists();
-    
-    // Contadores
-    $followersCount = DB::table('followers')->where('user_id', $id)->count();
-    $followingCount = DB::table('followers')->where('follower_id', $id)->count();
 
-    return response()->json([
-        'id' => $user->id,
-        'name' => $user->name,
-        'bio' => $user->bio,
-        'location' => $user->location,
-        'age' => $user->age,
-        'profile_photo' => $user->profile_photo,
-        'extra_photos' => $user->extra_photos,
-        'last_seen_at' => $user->last_seen_at,
-        'is_premium' => $user->isPremiumActive(),
-        'languages' => $user->languages,
-        'is_blocked' => $isBlocked,
-        'is_following' => $isFollowing,
-        'followers_count' => $followersCount, 
-        'following_count' => $followingCount, 
-    ]);
+        // Verifica se eu sigo este utilizador
+        $isFollowing = DB::table('followers')->where('user_id', $id)->where('follower_id', $request->user()->id)->exists();
+        
+        // Contadores
+        $followersCount = DB::table('followers')->where('user_id', $id)->count();
+        $followingCount = DB::table('followers')->where('follower_id', $id)->count();   
+
+
+        //Calcular a idade
+        $idadeCalculada = 0;
+        if ($user->date_of_birth) {
+            $idadeCalculada = \Carbon\Carbon::parse($user->date_of_birth)->age;
+        }
+
+        return response()->json([
+            'id' => $user->id,
+            'name' => $user->name,
+            'bio' => $user->bio,
+            'location' => $user->location,
+            'age' => $idadeCalculada, // <-- Envia a idade calculada
+            'profile_photo' => $user->profile_photo,
+            'extra_photos' => $user->extra_photos,
+            'last_seen_at' => $user->last_seen_at,
+            'is_premium' => $user->isPremiumActive(),
+            'languages' => $user->languages,
+            'is_blocked' => $isBlocked,
+            'is_following' => $isFollowing,
+            'followers_count' => $followersCount, 
+            'following_count' => $followingCount, 
+        ]);
     });
 
     Route::middleware('auth:sanctum')->post('/users/{id}/follow', function (Request $request, $id) {
