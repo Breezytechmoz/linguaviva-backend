@@ -31,14 +31,14 @@ Route::get('/teste', function () {
     return response()->json(['status' => 'sucesso', 'mensagem' => 'API a funcionar!']);
 });
 
-
-// Rota de Registo Atualizada
+// Rota de Registo Atualizada com Data de Nascimento
 Route::post('/register', function (Request $request) {
     $request->validate([
         'name' => 'required|string|max:255',
         'email' => 'required|string|email|max:255|unique:users',
         'password' => 'required|string|min:6',
         'location' => 'required|string',
+        'date_of_birth' => 'required|date', // <-- NOVO
         'bio' => 'nullable|string',
         'photo' => 'required|image|mimes:jpeg,png,jpg|max:5120',
     ]);
@@ -62,9 +62,10 @@ Route::post('/register', function (Request $request) {
         'email' => $request->email,
         'password' => Hash::make($request->password),
         'location' => $request->location,
+        'date_of_birth' => $request->date_of_birth, // <-- NOVO
         'bio' => $request->bio ?? '',
         'profile_photo' => $url,
-        'profile_completion' => 40, // 20 base + 10 local + 10 bio (a foto e resto virá depois)
+        'profile_completion' => 50, // 20 base + 10 local + 10 data + 10 bio
     ]);
 
     $token = $user->createToken('auth_token')->plainTextToken;
