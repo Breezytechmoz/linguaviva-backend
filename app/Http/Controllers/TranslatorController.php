@@ -131,33 +131,52 @@ class TranslatorController extends Controller
         return view('translator.apply', compact('languages', 'jaCandidatou'));
     }
 
-    public function submitWebApplication(Request $request)
+        public function submitWebApplication(Request $request)
     {
         $request->validate([
             'language_ids' => 'required|array',
             'video' => 'required|file|mimes:mp4,mov,avi|max:20480',
+            'cv' => 'nullable|file|mimes:pdf,doc,docx|max:5120', // Máx 5MB
+            'cover_letter' => 'nullable|file|mimes:pdf,doc,docx|max:5120',
             'experience' => 'nullable|string'
         ]);
 
         $user = Auth::user();
         
-        $videoPath = $request->file('video')->store('applications', 'public');
+        // Upload do Vídeo
+        $videoPath = $request->file('video')->store('applications/videos', 'public');
+        
+        // Upload do CV (se existir)
+        $cvUrl = null;
+        if ($request->hasFile('cv')) {
+            $cvPath = $request->file('cv')->store('applications/cvs', 'public');
+            $cvUrl = asset('storage/' . $cvPath);
+        }
+
+        // Upload da Carta de Apresentação (se existir)
+        $letterUrl = null;
+        if ($request->hasFile('cover_letter')) {
+            $letterPath = $request->file('cover_letter')->store('applications/letters', 'public');
+            $letterUrl = asset('storage/' . $letterPath);
+        }
 
         \App\Models\TranslatorApplication::create([
             'user_id' => $user->id,
             'language_requested' => json_encode($request->language_ids),
             'experience' => $request->experience ?? '',
             'video_path' => asset('storage/' . $videoPath),
+            'cv_path' => $cvUrl,
+            'cover_letter_path' => $letterUrl,
+            'wants_interview' => $request->has('wants_interview') ? true : false,
         ]);
 
-        // Criar notificação para o Admin
         \App\Models\AdminNotification::create([
             'type' => 'translator',
             'title' => 'Nova Candidatura (Web)',
-            'message' => $user->name . ' candidatou-se a tradutor através do portal web.',
+            'message' => $user->name . ' candidatou-se a tradutor.',
             'url' => route('admin.dashboard'),
         ]);
 
-        return redirect()->route('translator.apply-form')->with('success', 'Candidatura enviada com sucesso! O admin irá analisar o teu vídeo.');
+        return redirect()->route('translator.apply-form')->with('success', 'Candidatura enviada com sucesso! O admin irá analisar o teu perfil em breve.');
     }
 }

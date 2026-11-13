@@ -9,7 +9,7 @@ class TranslatorApplication extends Model
 {
     use HasFactory;
 
-    protected $fillable = ['user_id', 'language_requested', 'experience', 'status', 'video_path'];
+    protected $fillable = ['user_id', 'language_requested', 'experience', 'status', 'video_path', 'cv_path', 'cover_letter_path', 'wants_interview', 'status'];
 
     // ADICIONA ESTA RELAÇÃO
     public function user()
