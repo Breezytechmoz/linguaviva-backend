@@ -387,7 +387,7 @@ Route::middleware('auth:sanctum')->post('/user/fcm-token', function (Request $re
 // ROTA DO PERFIL DO UTILIZADOR LOGADO
 // =========================================================================
 Route::middleware('auth:sanctum')->get('/user/profile', function (Request $request) {
-    $user = $request->user();
+    $user = $request->user()->load('languages');
     
     $walletBalance = 0;
     $wordsSubmitted = 0;
