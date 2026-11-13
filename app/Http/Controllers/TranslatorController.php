@@ -122,61 +122,68 @@ class TranslatorController extends Controller
     }
 
         public function showApplyForm()
-    {
-        $languages = \App\Models\Language::where('is_active', true)->get();
-        $jaCandidatou = \App\Models\TranslatorApplication::where('user_id', Auth::id())
-            ->where('status', 'pending')
-            ->exists();
+        {
+            $languages = \App\Models\Language::where('is_active', true)->get();
+            $user = Auth::user();
             
-        return view('translator.apply', compact('languages', 'jaCandidatou'));
-    }
+            // Línguas que o utilizador já traduz (armazenadas como array na base de dados)
+            $myLanguages = $user->translator_languages ?? [];
+            
+            // Verifica se já tem uma candidatura pendente
+            $jaCandidatou = \App\Models\TranslatorApplication::where('user_id', $user->id)
+                ->where('status', 'pending')
+                ->exists();
+                
+            return view('translator.apply', compact('languages', 'jaCandidatou', 'myLanguages'));
+        }
 
         public function submitWebApplication(Request $request)
-    {
-        $request->validate([
-            'language_ids' => 'required|array',
-            'video' => 'required|file|mimes:mp4,mov,avi|max:20480',
-            'cv' => 'nullable|file|mimes:pdf,doc,docx|max:5120', // Máx 5MB
-            'cover_letter' => 'nullable|file|mimes:pdf,doc,docx|max:5120',
-            'experience' => 'nullable|string'
-        ]);
+        {
+            $request->validate([
+                'language_id' => 'required|exists:languages,id', // Agora é apenas 1 ID
+                'video' => 'required|file|mimes:mp4,mov,avi|max:20480',
+                'cv' => 'nullable|file|mimes:pdf,doc,docx|max:5120',
+                'cover_letter' => 'nullable|file|mimes:pdf,doc,docx|max:5120',
+                'experience' => 'nullable|string'
+            ]);
 
-        $user = Auth::user();
-        
-        // Upload do Vídeo
-        $videoPath = $request->file('video')->store('applications/videos', 'public');
-        
-        // Upload do CV (se existir)
-        $cvUrl = null;
-        if ($request->hasFile('cv')) {
-            $cvPath = $request->file('cv')->store('applications/cvs', 'public');
-            $cvUrl = asset('storage/' . $cvPath);
+            $user = Auth::user();
+            $myLanguages = $user->translator_languages ?? [];
+
+            // Verifica se ele já não traduz esta língua
+            if (in_array((int)$request->language_id, array_map('intval', $myLanguages))) {
+                return back()->withErrors(['language_id' => 'Já traduzes esta língua. Escolhe outra.']);
+            }
+            
+            $videoPath = $request->file('video')->store('applications/videos', 'public');
+            
+            $cvUrl = null;
+            if ($request->hasFile('cv')) {
+                $cvUrl = asset('storage/' . $request->file('cv')->store('applications/cvs', 'public'));
+            }
+
+            $letterUrl = null;
+            if ($request->hasFile('cover_letter')) {
+                $letterUrl = asset('storage/' . $request->file('cover_letter')->store('applications/letters', 'public'));
+            }
+
+            \App\Models\TranslatorApplication::create([
+                'user_id' => $user->id,
+                'language_requested' => json_encode([$request->language_id]), // Guarda como array para manter compatibilidade
+                'experience' => $request->experience ?? '',
+                'video_path' => asset('storage/' . $videoPath),
+                'cv_path' => $cvUrl,
+                'cover_letter_path' => $letterUrl,
+                'wants_interview' => $request->has('wants_interview') ? true : false,
+            ]);
+
+            \App\Models\AdminNotification::create([
+                'type' => 'translator',
+                'title' => 'Nova Candidatura (Web)',
+                'message' => $user->name . ' candidatou-se a tradutor.',
+                'url' => route('admin.dashboard'),
+            ]);
+
+            return redirect()->route('translator.apply-form')->with('success', 'Candidatura enviada! O admin irá analisar o teu perfil.');
         }
-
-        // Upload da Carta de Apresentação (se existir)
-        $letterUrl = null;
-        if ($request->hasFile('cover_letter')) {
-            $letterPath = $request->file('cover_letter')->store('applications/letters', 'public');
-            $letterUrl = asset('storage/' . $letterPath);
-        }
-
-        \App\Models\TranslatorApplication::create([
-            'user_id' => $user->id,
-            'language_requested' => json_encode($request->language_ids),
-            'experience' => $request->experience ?? '',
-            'video_path' => asset('storage/' . $videoPath),
-            'cv_path' => $cvUrl,
-            'cover_letter_path' => $letterUrl,
-            'wants_interview' => $request->has('wants_interview') ? true : false,
-        ]);
-
-        \App\Models\AdminNotification::create([
-            'type' => 'translator',
-            'title' => 'Nova Candidatura (Web)',
-            'message' => $user->name . ' candidatou-se a tradutor.',
-            'url' => route('admin.dashboard'),
-        ]);
-
-        return redirect()->route('translator.apply-form')->with('success', 'Candidatura enviada com sucesso! O admin irá analisar o teu perfil em breve.');
-    }
 }

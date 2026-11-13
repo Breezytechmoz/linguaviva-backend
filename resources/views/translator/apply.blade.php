@@ -78,19 +78,43 @@
             <form method="POST" action="{{ route('translator.apply-submit') }}" enctype="multipart/form-data" class="space-y-8">
                 @csrf
                 
-                <!-- SECÇÃO 1: LÍNGUAS -->
+                                <!-- SECÇÃO 1: LÍNGUAS -->
                 <div class="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
                     <div class="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center gap-3">
                         <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-bold">1</div>
-                        <h2 class="text-lg font-bold text-slate-800">Línguas que dominas</h2>
+                        <h2 class="text-lg font-bold text-slate-800">Língua a que te candidatas</h2>
                     </div>
                     <div class="p-6">
-                        <p class="text-sm text-slate-500 mb-4">Seleciona as línguas para as quais te queres candidatar a traduzir.</p>
-                        <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <p class="text-sm text-slate-500 mb-4">Escolhe a língua para a qual te queres candidatar. Só podes candidatar-te a uma língua de cada vez.</p>
+                        
+                        @if ($errors->has('language_id'))
+                            <div class="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm font-medium">
+                                {{ $errors->first('language_id') }}
+                            </div>
+                        @endif
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
                             @foreach($languages as $lang)
-                                <label class="flex items-center gap-3 p-3 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 hover:border-green-500 transition-all group">
-                                    <input type="checkbox" name="language_ids[]" value="{{ $lang->id }}" class="w-5 h-5 text-green-600 rounded focus:ring-green-500 border-slate-300">
-                                    <span class="text-sm font-semibold text-slate-700 group-hover:text-green-700">{{ $lang->name }}</span>
+                                @php
+                                    $jaTraduz = in_array((int)$lang->id, array_map('intval', $myLanguages));
+                                @endphp
+                                
+                                <label class="relative flex items-center gap-3 p-3 border rounded-xl transition-all 
+                                    {{ $jaTraduz ? 'border-slate-200 bg-slate-100 opacity-60 cursor-not-allowed' : 'border-slate-200 cursor-pointer hover:border-green-500 hover:bg-green-50 group has-[:checked]:border-green-500 has-[:checked]:bg-green-50 has-[:checked]:ring-1 has-[:checked]:ring-green-500' }}">
+                                    
+                                    <input type="radio" name="language_id" value="{{ $lang->id }}" 
+                                        class="w-4 h-4 text-green-600 focus:ring-green-500 border-slate-300"
+                                        {{ $jaTraduz ? 'disabled' : '' }} required>
+                                    
+                                    <span class="text-sm font-semibold {{ $jaTraduz ? 'text-slate-500' : 'text-slate-700 group-hover:text-green-700' }}">
+                                        {{ $lang->name }}
+                                    </span>
+
+                                    @if($jaTraduz)
+                                        <span class="absolute top-2 right-2 text-[10px] font-bold text-slate-500 bg-slate-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                            <i class="fa-solid fa-lock"></i> Já traduzes
+                                        </span>
+                                    @endif
                                 </label>
                             @endforeach
                         </div>
