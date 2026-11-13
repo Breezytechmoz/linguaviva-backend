@@ -120,4 +120,44 @@ class TranslatorController extends Controller
 
         return back()->with('success', 'Candidatura enviada! Aguarda a aprovação do admin.');
     }
+
+        public function showApplyForm()
+    {
+        $languages = \App\Models\Language::where('is_active', true)->get();
+        $jaCandidatou = \App\Models\TranslatorApplication::where('user_id', Auth::id())
+            ->where('status', 'pending')
+            ->exists();
+            
+        return view('translator.apply', compact('languages', 'jaCandidatou'));
+    }
+
+    public function submitWebApplication(Request $request)
+    {
+        $request->validate([
+            'language_ids' => 'required|array',
+            'video' => 'required|file|mimes:mp4,mov,avi|max:20480',
+            'experience' => 'nullable|string'
+        ]);
+
+        $user = Auth::user();
+        
+        $videoPath = $request->file('video')->store('applications', 'public');
+
+        \App\Models\TranslatorApplication::create([
+            'user_id' => $user->id,
+            'language_requested' => json_encode($request->language_ids),
+            'experience' => $request->experience ?? '',
+            'video_path' => asset('storage/' . $videoPath),
+        ]);
+
+        // Criar notificação para o Admin
+        \App\Models\AdminNotification::create([
+            'type' => 'translator',
+            'title' => 'Nova Candidatura (Web)',
+            'message' => $user->name . ' candidatou-se a tradutor através do portal web.',
+            'url' => route('admin.dashboard'),
+        ]);
+
+        return redirect()->route('translator.apply-form')->with('success', 'Candidatura enviada com sucesso! O admin irá analisar o teu vídeo.');
+    }
 }

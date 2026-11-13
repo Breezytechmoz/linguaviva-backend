@@ -100,6 +100,22 @@ class AdminController extends Controller
             $translation->save();
         }
         return back();
+
+        // NOVA NOTIFICAÇÃO PARA O TRADUTOR (App Flutter)
+            \DB::table('app_notifications')->insert([
+                'user_id' => $translation->translator_id,
+                'title' => 'Tradução Aprovada! 🎉',
+                'message' => 'A tua tradução de "' . $translation->source_word . '" foi aprovada e recebeste 0.50 MT.',
+                'type' => 'system',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+            
+        } else {
+            $translation->status = 'rejected';
+            $translation->save();
+        }
+        return back();
     }
     
     public function handlePayment(Request $request, $id)

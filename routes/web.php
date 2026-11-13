@@ -19,6 +19,8 @@ Route::middleware(['auth'])->group(function () {
     Route::post('/tradutor/atualizar-idiomas', [TranslatorController::class, 'updateLanguages'])->name('translator.update-languages');
     Route::post('/tradutor/revisao/{translationId}', [TranslatorController::class, 'submitRevision'])->name('translator.submit-revision');
     Route::post('/tradutor/nova-candidatura', [TranslatorController::class, 'applyNewLanguage'])->name('translator.apply-new');
+    Route::get('/tornar-tradutor', [TranslatorController::class, 'showApplyForm'])->name('translator.apply-form');
+    Route::post('/tornar-tradutor', [TranslatorController::class, 'submitWebApplication'])->name('translator.apply-submit');
 });
 
 Route::get('/', function () {

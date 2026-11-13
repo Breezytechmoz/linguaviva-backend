@@ -56,6 +56,21 @@
             </div>
         @endif
 
+                <!-- Mostrar erros de validação do Laravel -->
+        @if ($errors->any())
+            <div class="bg-red-50 border-l-4 border-red-500 text-red-700 p-4 rounded-r-xl flex items-start gap-3 shadow-sm">
+                <i class="fa-solid fa-triangle-exclamation text-lg mt-0.5"></i> 
+                <div>
+                    <p class="font-bold">Ocorreu um erro:</p>
+                    <ul class="list-disc ml-4 text-sm mt-1">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            </div>
+        @endif
+
         <!-- Stats Cards -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
             <!-- Carteira -->
