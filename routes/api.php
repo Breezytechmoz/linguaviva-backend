@@ -31,23 +31,45 @@ Route::get('/teste', function () {
     return response()->json(['status' => 'sucesso', 'mensagem' => 'API a funcionar!']);
 });
 
-// Rota de Registo
+
+// Rota de Registo Atualizada
 Route::post('/register', function (Request $request) {
     $request->validate([
         'name' => 'required|string|max:255',
         'email' => 'required|string|email|max:255|unique:users',
         'password' => 'required|string|min:6',
+        'location' => 'required|string',
+        'bio' => 'nullable|string',
+        'photo' => 'required|image|mimes:jpeg,png,jpg|max:5120',
     ]);
+
+    // Upload da Foto para o Cloudinary
+    $url = null;
+    if ($request->hasFile('photo')) {
+        try {
+            $uploadApi = new UploadApi();
+            $result = $uploadApi->upload($request->file('photo')->getRealPath(), [
+                'folder' => 'linguaviva/profiles'
+            ]);
+            $url = $result['secure_url'];
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'erro', 'mensagem' => 'Erro ao carregar a foto: ' . $e->getMessage()], 500);
+        }
+    }
 
     $user = User::create([
         'name' => $request->name,
         'email' => $request->email,
         'password' => Hash::make($request->password),
+        'location' => $request->location,
+        'bio' => $request->bio ?? '',
+        'profile_photo' => $url,
+        'profile_completion' => 40, // 20 base + 10 local + 10 bio (a foto e resto virá depois)
     ]);
 
     $token = $user->createToken('auth_token')->plainTextToken;
 
-    // NOTIFICAÇÃO MOVIDA PARA DENTRO DA ROTA E ANTES DO RETURN
+    // Notificação para o Admin
     \App\Models\AdminNotification::create([
         'type' => 'user',
         'title' => 'Novo Utilizador',
