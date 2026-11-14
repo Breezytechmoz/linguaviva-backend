@@ -30,6 +30,7 @@ Route::get('/', function () {
 // === ROTAS DE LOGIN DO ADMIN (DEVEM FICAR FORA DO MIDDLEWARE AUTH) ===
 Route::get('/admin/login', [AdminController::class, 'showLoginForm'])->name('admin.login');
 Route::post('/admin/login', [AdminController::class, 'login']);
+Route::post('/admin/login', [AdminController::class, 'login'])->name('admin.login.submit');
 Route::post('/admin/logout', [AdminController::class, 'logout'])->name('admin.logout');
 
 // === ROTAS PROTEGIDAS DO ADMIN ===
