@@ -165,11 +165,12 @@
                     <tr>
                         <th class="px-6 py-4 font-semibold">Candidato</th>
                         <th class="px-6 py-4 font-semibold">Experiência</th>
-                        <th class="px-6 py-4 font-semibold">Vídeo</th>
+                        <th class="px-6 py-4 font-semibold">Documentos</th>
+                        <th class="px-6 py-4 font-semibold text-center">Entrevista</th>
                         <th class="px-6 py-4 font-semibold text-right">Ações</th>
                     </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-100 text-sm">
+                    <tbody class="divide-y divide-slate-100 text-sm">
                     @foreach($candidaturas as $cand)
                     <tr class="hover:bg-slate-50 transition-colors">
                         <td class="px-6 py-4">
@@ -177,28 +178,59 @@
                             <p class="text-xs text-slate-500">{{ $cand->language_requested }}</p>
                         </td>
                         <td class="px-6 py-4 text-slate-600 max-w-xs truncate">{{ $cand->experience ?? 'Sem experiência descrita' }}</td>
+                        
+                        <!-- COLUNA DE DOCUMENTOS -->
                         <td class="px-6 py-4">
-                            @if($cand->video_path)
-                                <a href="{{ $cand->video_path }}" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 bg-blue-50 px-3 py-1.5 rounded-lg w-max text-xs">
-                                    <i class="fa-solid fa-play"></i> Ver Vídeo
-                                </a>
-                            @else
-                                <span class="text-slate-400">Sem vídeo</span>
-                            @endif
-                        </td>
-                        <td class="px-6 py-4 text-right flex gap-2 justify-end">
-                            <form method="POST" action="{{ route('admin.approve-translator', [$cand->id, 'approve']) }}">
-                                @csrf
-                                <button class="bg-green-500 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-green-600 shadow-sm shadow-green-500/30 transition-colors">Aprovar</button>
-                            </form>
-                            <form method="POST" action="{{ route('admin.approve-translator', [$cand->id, 'reject']) }}">
-                                @csrf
-                                <button class="bg-slate-100 text-slate-700 px-4 py-2 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">Rejeitar</button>
-                            </form>
-                        </td>
-                    </tr>
-                    @endforeach
-                </tbody>
+                            <div class="flex flex-col gap-1.5">
+                                @if($cand->video_path)
+                                    <a href="{{ $cand->video_path }}" target="_blank" class="text-blue-600 hover:text-blue-800 font-semibold flex items-center gap-1 bg-blue-50 px-2.5 py-1 rounded-md w-max text-[11px] transition-colors">
+                                        <i class="fa-solid fa-play"></i> Ver Vídeo
+                                    </a>
+                                @endif
+
+                                @if($cand->cv_path)
+                                    <a href="{{ $cand->cv_path }}" target="_blank" class="text-purple-600 hover:text-purple-800 font-semibold flex items-center gap-1 bg-purple-50 px-2.5 py-1 rounded-md w-max text-[11px] transition-colors">
+                                        <i class="fa-solid fa-file-pdf"></i> Currículo (CV)
+                                    </a>
+                                @endif
+
+                                @if($cand->cover_letter_path)
+                                    <a href="{{ $cand->cover_letter_path }}" target="_blank" class="text-teal-600 hover:text-teal-800 font-semibold flex items-center gap-1 bg-teal-50 px-2.5 py-1 rounded-md w-max text-[11px] transition-colors">
+                                        <i class="fa-solid fa-file-lines"></i> Carta Apresentação
+                                        </a>
+                                    @endif
+                                </div>
+                            </td>
+
+                            <!-- COLUNA DE ENTREVISTA -->
+                            <td class="px-6 py-4 text-center">
+                                @if($cand->wants_interview)
+                                    <span class="bg-amber-100 text-amber-700 border border-amber-200 px-2.5 py-1 rounded-md text-xs font-bold inline-flex items-center gap-1">
+                                        <i class="fa-solid fa-video"></i> Solicitada
+                                    </span>
+                                @else
+                                    <span class="text-slate-400 text-xs">Não</span>
+                                @endif
+                            </td>
+
+                            <!-- BOTÕES DE AÇÃO -->
+                            <td class="px-6 py-4 text-right flex flex-col gap-2 items-end justify-center h-full">
+                                <form method="POST" action="{{ route('admin.approve-translator', [$cand->id, 'approve']) }}" class="w-full">
+                                    @csrf
+                                    <button class="w-full bg-green-500 text-white px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-green-600 shadow-sm shadow-green-500/30 transition-colors">
+                                        Aprovar
+                                    </button>
+                                </form>
+                                <form method="POST" action="{{ route('admin.approve-translator', [$cand->id, 'reject']) }}" class="w-full">
+                                    @csrf
+                                    <button class="w-full bg-slate-100 text-slate-700 px-4 py-1.5 rounded-lg text-xs font-bold hover:bg-slate-200 transition-colors">
+                                        Rejeitar
+                                    </button>
+                                </form>
+                            </td>
+                        </tr>
+                        @endforeach
+                    </tbody>
             </table>
         </div>
     </div>
