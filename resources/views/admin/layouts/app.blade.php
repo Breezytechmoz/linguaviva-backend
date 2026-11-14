@@ -46,6 +46,10 @@
                 <span class="ml-2">Moderação</span>
             </a>
         </nav>
+                    <a href="{{ route('admin.applications') }}" class="nav-item flex items-center px-3 py-2.5 rounded-xl {{ request()->routeIs('admin.applications') ? 'bg-green-500/10 text-green-400 font-semibold' : 'text-slate-400 hover:text-white hover:bg-slate-800/50' }}">
+                <i class="fa-solid fa-user-tie w-6 text-center"></i>
+                <span class="ml-2">Candidaturas</span>
+            </a>
         
         <div class="p-4 border-t border-slate-800">
             <form method="POST" action="{{ route('admin.logout') }}">

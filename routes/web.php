@@ -31,6 +31,7 @@ Route::get('/', function () {
 Route::get('/admin/login', [AdminController::class, 'showLoginForm'])->name('admin.login');
 Route::post('/admin/login', [AdminController::class, 'login']);
 Route::post('/admin/login', [AdminController::class, 'login'])->name('admin.login.submit');
+Route::get('/admin/applications', [AdminController::class, 'applications'])->name('admin.applications');
 Route::post('/admin/logout', [AdminController::class, 'logout'])->name('admin.logout');
 
 // === ROTAS PROTEGIDAS DO ADMIN ===

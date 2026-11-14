@@ -79,6 +79,12 @@ class AdminController extends Controller
         return view('admin.moderation', compact('denuncias'));
     }
 
+        public function applications()
+    {
+        $candidaturas = TranslatorApplication::with('user')->orderBy('created_at', 'desc')->get();
+        return view('admin.applications', compact('candidaturas'));
+    }
+
     // === AÇÕES ===
 
     public function handleTranslation($id, $action)
