@@ -829,22 +829,35 @@ Route::post('/reset-password', function (Request $request) {
 // ZEGO (SALAS DE VOZ)
 // =========================================================================
 Route::middleware('auth:sanctum')->post('/zego/token', function (Request $request) {
-    $request->validate(['room_id' => 'required|string']);
+    try {
+        $request->validate(['room_id' => 'required|string']);
 
-    $user = $request->user();
-    $appId = (int) env('ZEGO_APP_ID');
-    $secret = env('ZEGO_SERVER_SECRET');
-    $userId = (string) $user->id;
-    $roomId = $request->room_id;
-    $effectiveTimeInSeconds = 3600;
+        $user = $request->user();
+        
+        // Usa o env() mas com um fallback direto para garantir que não falha
+        $appId = (int) env('ZEGO_APP_ID', 1278385658);
+        $secret = env('ZEGO_SERVER_SECRET', '18acf8bab93665e0f362aeeaaf050e2d');
+        
+        $userId = (string) $user->id;
+        $roomId = $request->room_id;
+        $effectiveTimeInSeconds = 3600;
 
-    $token = ZegoServerAssistant::generateToken04($appId, $userId, $secret, $effectiveTimeInSeconds, '');
+        $tokenObj = ZegoServerAssistant::generateToken04($appId, $userId, $secret, $effectiveTimeInSeconds, '');
 
-    if ($token->code === ZegoErrorCodes::success) {
-        return response()->json(['token' => $token->token]);
+        if ($tokenObj->code === ZegoErrorCodes::success) {
+            return response()->json(['token' => $tokenObj->token]);
+        }
+
+        // DEVOLVE O ERRO DO ZEGO PARA O FLUTTER VER
+        return response()->json([
+            'error' => 'Zego recusou o token.', 
+            'code' => $tokenObj->code,
+            'message' => $tokenObj->message
+        ], 500);
+
+    } catch (\Exception $e) {
+        return response()->json(['error' => 'Erro interno: ' . $e->getMessage()], 500);
     }
-
-    return response()->json(['error' => 'Não foi possível gerar o token de acesso.'], 500);
 });
 
 Route::middleware('auth:sanctum')->get('/rooms', function () {
