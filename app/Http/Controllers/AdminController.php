@@ -91,17 +91,13 @@ class AdminController extends Controller
             $translation->status = 'approved';
             $translation->save();
 
+            // Paga 0.50 MT ao tradutor
             $wallet = TranslatorWallet::firstOrCreate(['user_id' => $translation->translator_id]);
             $wallet->balance += 0.50;
             $wallet->total_earned += 0.50;
             $wallet->save();
-        } else {
-            $translation->status = 'rejected';
-            $translation->save();
-        }
-        return back();
 
-        // NOVA NOTIFICAÇÃO PARA O TRADUTOR (App Flutter)
+            // NOVA NOTIFICAÇÃO PARA O TRADUTOR (App Flutter)
             \DB::table('app_notifications')->insert([
                 'user_id' => $translation->translator_id,
                 'title' => 'Tradução Aprovada! 🎉',
@@ -115,6 +111,7 @@ class AdminController extends Controller
             $translation->status = 'rejected';
             $translation->save();
         }
+        
         return back();
     }
     
